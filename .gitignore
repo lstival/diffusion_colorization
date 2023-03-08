@@ -1,0 +1,8 @@
+models/
+runs/
+__pycache__/
+results/
+pos_model/
+pos_results/
+unet_model/
+unet_results/
