@@ -24,7 +24,7 @@ from lab_vgg import *
 seed = 2023
 torch.manual_seed(seed)
 
-logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
+# logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
 
 # Difusion example
 # https://github.com/dome272/Diffusion-Models-pytorch
@@ -43,6 +43,7 @@ class Diffusion:
         self.alpha_hat = torch.cumprod(self.alpha, dim=0)
 
         self.img_size = img_size
+        self.img_size = 8
         self.device = device
 
     def prepare_noise_schedule(self):
@@ -61,7 +62,7 @@ class Diffusion:
         # logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
-            x = torch.randn((n, in_ch, int(self.img_size/16), int(self.img_size/16))).to(self.device)
+            x = torch.randn((n, in_ch, int(self.img_size), int(self.img_size))).to(self.device)
             for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
                 t = (torch.ones(n) * i).long().to(self.device)
                 predicted_noise = model(x, t, labels)
@@ -136,7 +137,7 @@ def train(args):
     ema_model = copy.deepcopy(model).eval().requires_grad_(False)
 
     for epoch in range(args.epochs):
-        logging.info(f"Starting epoch {epoch}:")
+        # logging.info(f"Starting epoch {epoch}:")
         pbar = tqdm(dataloader)
         for i, (data) in enumerate(pbar):
             img, img_gray, img_color, next_frame = create_samples(data)

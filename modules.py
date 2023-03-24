@@ -74,7 +74,7 @@ class SelfAttention(nn.Module):
         super(SelfAttention, self).__init__()
         self.channels = channels
         self.size = size
-        self.mha = nn.MultiheadAttention(channels, 2, batch_first=True)
+        self.mha = nn.MultiheadAttention(channels, 4, batch_first=True)
         self.ln = nn.LayerNorm([channels])
         self.ff_self = nn.Sequential(
             nn.LayerNorm([channels]),
@@ -85,14 +85,14 @@ class SelfAttention(nn.Module):
 
     def forward(self, x):
         # print(f"SELF ATTENT x INPUT: {x.shape}")
-        x = x.view(-1, self.channels, int(self.size/16) * int(self.size/16)).swapaxes(1, 2)
+        x = x.view(-1, self.channels, int(self.size) * int(self.size)).swapaxes(1, 2)
         # print(f"SELF ATTENT x shape: {x.shape}")
         x_ln = self.ln(x)
         attention_value, _ = self.mha(x_ln, x_ln, x_ln)
         attention_value = attention_value + x
         attention_value = self.ff_self(attention_value) + attention_value
         # print(f"ATTENTION_VALUE shape: {attention_value.shape}")
-        return attention_value.swapaxes(2, 1).view(-1, self.channels, int(self.size/16), int(self.size/16))
+        return attention_value.swapaxes(2, 1).view(-1, self.channels, int(self.size), int(self.size))
 
 
 class DoubleConv(nn.Module):
@@ -174,20 +174,20 @@ class UNet_conditional(nn.Module):
         
         self.inc = DoubleConv(c_in, 64)
         self.down1 = Down(64, 128)
-        self.sa1 = SelfAttention(128, 64)
+        self.sa1 = SelfAttention(128, 4)
         self.down2 = Down(128, 256)
-        self.sa2 = SelfAttention(256, 32)
+        self.sa2 = SelfAttention(256, 2)
         self.down3 = Down(256, 256)
-        self.sa3 = SelfAttention(256, 16)
+        self.sa3 = SelfAttention(256, 1)
         
         self.bot1 = DoubleConv(256, max_ch_deep)
         self.bot2 = DoubleConv(max_ch_deep, max_ch_deep)
         self.bot3 = DoubleConv(max_ch_deep, 256)
 
         self.up1 = Up(512, 128)
-        self.sa4 = SelfAttention(128, 32)
+        self.sa4 = SelfAttention(128, 2)
         self.up2 = Up(256, 128)
-        self.sa5 = SelfAttention(128, 64)
+        self.sa5 = SelfAttention(128, 4)
         self.up3 = Up(192, 128)
         self.outc = nn.Sequential(
             nn.Conv2d(128, c_out, kernel_size=1)

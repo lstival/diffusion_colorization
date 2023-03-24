@@ -188,6 +188,7 @@ class DAVISDataset(Dataset):
         super(Dataset, self).__init__()
 
         self.path = path
+        self.rgb = rgb
         self.image_size = image_size
 
         self.scenes = os.listdir(path)
@@ -208,6 +209,7 @@ class DAVISDataset(Dataset):
 
             for scene_frame in range(len(os.listdir(scene_path))-1):
                 key_frame = random.randint(0, 10)
+                key_frame = 10
                 color_examples.append(self.__transform__(Image.open(f"{scene_path}/{str(key_frame).zfill(5)}.jpg"))) #Img 0
                 samples.append(self.__transform__(Image.open(f"{scene_path}/{str(scene_frame+1).zfill(5)}.jpg"))) # Other Imgs
 
@@ -220,15 +222,14 @@ class DAVISDataset(Dataset):
         Recives a sample of PIL images and return
         they normalized and converted to a tensor.
         """
-
         transform=transforms.Compose([
-                        torchvision.transforms.Resize(150),  # args.image_size + 1/4 *args.image_size
-                        torchvision.transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
-                        transforms.Resize((self.image_size,self.image_size)),
-                        transforms.ToTensor(),
-                        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-                        K.color.RgbToYuv(),
-                    ])
+            torchvision.transforms.Resize(80),  # args.image_size + 1/4 *args.image_size
+            torchvision.transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
+            transforms.Resize((self.image_size,self.image_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            K.color.RgbToYuv(),
+        ])
 
         x_transformed = transform(x)
         return x_transformed
