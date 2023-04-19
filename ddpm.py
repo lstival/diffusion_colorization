@@ -33,7 +33,7 @@ torch.manual_seed(seed)
 # https://huggingface.co/lambdalabs/sd-image-variations-diffusers
 
 class Diffusion:
-    def __init__(self, noise_steps=500, beta_start=1e-4, beta_end=0.02, img_size=128, device="cuda"):
+    def __init__(self, img_size, noise_steps=500, beta_start=1e-4, beta_end=0.02, device="cuda"):
         self.noise_steps = noise_steps
         self.beta_start = beta_start
         self.beta_end = beta_end
@@ -43,7 +43,7 @@ class Diffusion:
         self.alpha_hat = torch.cumprod(self.alpha, dim=0)
 
         self.img_size = img_size
-        self.img_size = 8
+        # self.img_size = 8
         self.device = device
 
     def prepare_noise_schedule(self):
@@ -58,12 +58,14 @@ class Diffusion:
     def sample_timesteps(self, n):
         return torch.randint(low=1, high=self.noise_steps, size=(n,))
 
-    def sample(self, model, n, labels, gray_img, cfg_scale=3, in_ch=3, create_img=True):
+    def sample(self, model, n, labels, gray_img=None, cfg_scale=3, in_ch=3, create_img=True):
         # logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
-            x = torch.randn((n, in_ch, int(self.img_size), int(self.img_size))).to(self.device)
-            for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
+            x = torch.randn((n, 3, int(self.img_size), int(self.img_size))).to(self.device)
+            # x = torch.randn((n, in_ch, 8, 8)).to(self.device)
+            # for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
+            for i in reversed(range(1, self.noise_steps)):
                 t = (torch.ones(n) * i).long().to(self.device)
                 predicted_noise = model(x, t, labels)
                 if cfg_scale > 0:
@@ -80,12 +82,13 @@ class Diffusion:
         model.train()
 
         if create_img:
-            y = scale_0_and_1(gray_img)
-            try:
-                _,u,v = torch.split(x, 1, dim=1)
-            except:
-                u,v = torch.split(x, 1, dim=1)
-            x = torch.cat([y[:,:1], u, v], 1)
+            # y = scale_0_and_1(gray_img)
+            # try:
+            #     y,u,v = torch.split(x, 1, dim=1)
+            # except:
+            #     u,v = torch.split(x, 1, dim=1)
+            # x = torch.cat([y[:,:1], u, v], 1)
+
             x = tensor_lab_2_rgb(x)
 
         return x

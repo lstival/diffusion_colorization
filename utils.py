@@ -82,8 +82,11 @@ def get_model_time():
 
     return dt_str
 
-def tensor_2_img(img):
-    new_img = (((img.clamp(-1, 1) + 1) / 2)*255).type(torch.uint8)
+def tensor_2_img(img, int_8=True):
+    if int_8:
+        new_img = (((img.clamp(-1, 1) + 1) / 2)*255).type(torch.uint8)
+    else:
+        new_img = (((img.clamp(-1, 1) + 1) / 2))
     return new_img
 
 def scale_0_and_1(tensor):
@@ -145,7 +148,7 @@ def frame_2_video(image_folder, video_name, img_start_name, gray=False, frame_ra
     video.release()
     # print("Convertion Done")
 
-def tensor_lab_2_rgb(x):
+def tensor_lab_2_rgb(x, int_8=True):
     try:
         y,u,v = torch.split(x, 1, dim=1)
     except:
@@ -161,7 +164,10 @@ def tensor_lab_2_rgb(x):
     x = torch.cat([y, u, v], 1)
 
     x = K.color.yuv_to_rgb(x)
-    x = (scale_0_and_1(x)*255).type(torch.uint8)
+    if int_8:
+        x = (scale_0_and_1(x)*255).type(torch.uint8)
+    else:
+        x = (scale_0_and_1(x))
 
     return x
 
@@ -196,3 +202,21 @@ def delete_empty_folders(root_dir):
                 print(f"Deleted empty folder: {folder_path}")
             except OSError:
                 pass
+
+def load_trained_weights(model, model_name, file_name):
+    """
+    model: Instance of a model to get trained weights
+    model_name: Name of trained model (name of the fold with the files)
+    file_name: Name of the file with the weigths
+
+    return the model with the trained weights.
+    """
+
+    #Path to load the saved weights 
+    path_weights = os.path.join("unet_model", model_name, f"{file_name}.pt")
+    # Load the weights
+    model_wights = torch.load(path_weights)
+    # Instance the weights loaded to the model recivied from parameter
+    model.load_state_dict(model_wights)
+
+    return model

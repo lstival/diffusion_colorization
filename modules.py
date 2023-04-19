@@ -38,7 +38,7 @@ class ColorAttention(nn.Module):
         self.channels = channels
         self.size = size
         self.dc = DoubleConv(in_ch, channels)
-        self.mha = nn.MultiheadAttention(channels, 4, batch_first=True)
+        self.mha = nn.MultiheadAttention(channels, 2, batch_first=True)
         self.ln = nn.LayerNorm([channels])
         self.ff_self = nn.Sequential(
             nn.LayerNorm([channels]),
@@ -74,7 +74,7 @@ class SelfAttention(nn.Module):
         super(SelfAttention, self).__init__()
         self.channels = channels
         self.size = size
-        self.mha = nn.MultiheadAttention(channels, 4, batch_first=True)
+        self.mha = nn.MultiheadAttention(channels, 2, batch_first=True)
         self.ln = nn.LayerNorm([channels])
         self.ff_self = nn.Sequential(
             nn.LayerNorm([channels]),
@@ -138,6 +138,37 @@ class Down(nn.Module):
         x = self.maxpool_conv(x)
         emb = self.emb_layer(t)[:, :, None, None].repeat(1, 1, x.shape[-2], x.shape[-1])
         return x + emb
+    
+
+class ReverseConv(nn.Module):
+    """
+    Class with Double Conv layers with labels union in the forward
+    """
+    def __init__(self, in_channels, out_channels, emb_dim=1024, mid_channels=None):
+        super().__init__()
+        if not mid_channels:
+            mid_channels = out_channels
+
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(1, mid_channels),
+            nn.GELU(),
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(1, out_channels),
+        )
+
+        self.emb_layer = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(
+                emb_dim,
+                out_channels
+            ),
+        )
+
+    def forward(self, x, t):
+        x = self.double_conv(x)
+        emb = self.emb_layer(t)[:, :, None, None].repeat(1, 1, x.shape[-2], x.shape[-1])
+        return x + emb
 
 
 class Up(nn.Module):
@@ -166,31 +197,98 @@ class Up(nn.Module):
         return x + emb
 
 
-class UNet_conditional(nn.Module):
-    def __init__(self, c_in=3, c_out=3, time_dim=256, device="cuda", max_ch_deep=512):
+class Reverse_diffusion(nn.Module):
+    def __init__(self, c_in=3, c_out=3, time_dim=256, device="cuda", img_size=8):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
-        
-        self.inc = DoubleConv(c_in, 64)
-        self.down1 = Down(64, 128)
-        self.sa1 = SelfAttention(128, 4)
-        self.down2 = Down(128, 256)
-        self.sa2 = SelfAttention(256, 2)
-        self.down3 = Down(256, 256)
-        self.sa3 = SelfAttention(256, 1)
-        
-        self.bot1 = DoubleConv(256, max_ch_deep)
-        self.bot2 = DoubleConv(max_ch_deep, max_ch_deep)
-        self.bot3 = DoubleConv(max_ch_deep, 256)
+        c_in = c_in*2
 
-        self.up1 = Up(512, 128)
-        self.sa4 = SelfAttention(128, 2)
-        self.up2 = Up(256, 128)
-        self.sa5 = SelfAttention(128, 4)
-        self.up3 = Up(192, 128)
+        self.down1 = ReverseConv(c_in//2, c_in*2)
+        self.sa1 = SelfAttention(c_in*2, img_size)
+        self.down2 = ReverseConv(c_in*2, c_in*4)
+        self.sa2 = SelfAttention(c_in*4, img_size)
+        self.down3 = ReverseConv(c_in*4, c_in*4)
+        self.sa3 = SelfAttention(c_in*4, img_size)
+
+        self.bot1 = DoubleConv(c_in*4, c_in*8)
+        self.bot2 = DoubleConv(c_in*8, c_in*8)
+        self.bot3 = DoubleConv(c_in*8, c_in*4)
+        
+        self.up1 = ReverseConv(c_in*4, c_in*4)
+        self.sa4 = SelfAttention(c_in*4, img_size)
+        self.up2 = ReverseConv(c_in*4, c_in*4)
+        self.sa5 = SelfAttention(c_in*4, img_size)
+        self.up3 = ReverseConv(c_in*4, c_in*2)
+        self.sa6 = SelfAttention(c_in*2, img_size)
         self.outc = nn.Sequential(
-            nn.Conv2d(128, c_out, kernel_size=1)
+            nn.Conv2d(c_in*2, c_out, kernel_size=1)
+        )
+
+    def pos_encoding(self, t, channels):
+        inv_freq = 1.0 / (
+            10000
+            ** (torch.arange(0, channels, 2, device=self.device).float() / channels)
+        )
+        pos_enc_a = torch.sin(t.repeat(1, channels // 2) * inv_freq)
+        pos_enc_b = torch.cos(t.repeat(1, channels // 2) * inv_freq)
+        pos_enc = torch.cat([pos_enc_a, pos_enc_b], dim=-1)
+        return pos_enc
+
+    def forward(self, x, t, y):
+        t = t.unsqueeze(-1).type(torch.float)
+        t = self.pos_encoding(t, self.time_dim)
+        if y is not None:
+            t += y
+
+        x1 = x
+        x2 = self.down1(x1, t)
+        x2 = self.sa1(x2)
+        x3 = self.down2(x2, t)
+        x3 = self.sa2(x3)
+        x4 = self.down3(x3, t)
+        x4 = self.sa3(x4)   
+
+        x4 = self.bot1(x4)
+        x4 = self.bot2(x4)
+        x4 = self.bot3(x4)
+
+        x = self.up1(x4, t)
+        x = self.sa4(x)
+        x = self.up2(x, t)
+        x = self.sa5(x)
+        x = self.up3(x, t)
+        
+        output = self.outc(x)
+        return output
+
+
+class UNet_conditional(nn.Module):
+    def __init__(self, c_in=3, c_out=3, time_dim=256, device="cuda", max_ch_deep=512, img_size=8):
+        super().__init__()
+        self.device = device
+        self.time_dim = time_dim
+        c_in=c_in//4
+        
+        self.inc = DoubleConv(c_in*4, c_in*2)
+        self.down1 = Down(c_in*2, c_in*4)
+        self.sa1 = SelfAttention(c_in*4, img_size//2)
+        self.down2 = Down(c_in*4, c_in*8)
+        self.sa2 = SelfAttention(c_in*8, img_size//4)
+        self.down3 = Down(c_in*8, c_in*8)
+        self.sa3 = SelfAttention(c_in*8, img_size//8)
+        
+        self.bot1 = DoubleConv(c_in*8, max_ch_deep)
+        self.bot2 = DoubleConv(max_ch_deep, max_ch_deep)
+        self.bot3 = DoubleConv(max_ch_deep, c_in*8)
+
+        self.up1 = Up(c_in*16, c_in*4)
+        self.sa4 = SelfAttention(c_in*4, img_size//4)
+        self.up2 = Up(c_in*8, c_in*2)
+        self.sa5 = SelfAttention(c_in*2, img_size//2)
+        self.up3 = Up(c_in*4, c_in*2)
+        self.outc = nn.Sequential(
+            nn.Conv2d(c_in*2, c_out, kernel_size=1)
         )
 
     def pos_encoding(self, t, channels):
@@ -263,29 +361,42 @@ class ImageFeatures(nn.Module):
 
 if __name__ == '__main__':
     import argparse 
+    from ddpm import *
     parser = argparse.ArgumentParser()
     args, unknown = parser.parse_known_args()
     args.batch_size = 4
-    args.image_size = 128
+    args.image_size = 8
     # net = UNet(device="cpu")
-    net = UNet_conditional(c_in=2, c_out=2, time_dim=1024, device="cuda")
+    # net = UNet_conditional(c_in=2, c_out=2, time_dim=1024, device="cuda")
+
+    diff_model = Reverse_diffusion(c_in=64, c_out=64, time_dim=1024, device="cuda").to(device)
+    diffusion = Diffusion(img_size=args.image_size, device="cuda")
+    labels = torch.zeros((args.batch_size, 1024)).to(device)
+
+    x = torch.ones((args.batch_size,64,8,8)).to(device)
+
+    t = diffusion.sample_timesteps(x.shape[0]).to(device)
+    x_t, noise = diffusion.noise_images(x, t)
+
+    out = diff_model(x, t, labels)
+
     # diffusion = Diffusion(img_size=args.image_size, device="cuda")
-    feature_model = ImageFeatures(out_size=1024).to("cuda")
+    # feature_model = ImageFeatures(out_size=1024).to("cuda")
 
-    # ViT_model = Vit_neck(image_size=args.image_size, batch_size=args.batch_size).to("cuda")
-    # print(sum([p.numel() for p in net.parameters()]))
+    # # ViT_model = Vit_neck(image_size=args.image_size, batch_size=args.batch_size).to("cuda")
+    # # print(sum([p.numel() for p in net.parameters()]))
 
-    x = torch.randn(args.batch_size, 3,  args.image_size,  args.image_size).to("cuda")
-    x_color = torch.randn(args.batch_size, 3,  args.image_size,  args.image_size).to("cuda")
+    # x = torch.randn(args.batch_size, 3,  args.image_size,  args.image_size).to("cuda")
+    # x_color = torch.randn(args.batch_size, 3,  args.image_size,  args.image_size).to("cuda")
     
-    labels = feature_model(x_color)
+    # labels = feature_model(x_color)
 
-    t = x.new_tensor([500] * x.shape[0]).long().to("cuda")
+    # t = x.new_tensor([500] * x.shape[0]).long().to("cuda")
     # y = x.new_tensor([1] * x.shape[0]).long()
     # print(net(x, t, y).shape)
     
     # out_color = ViT_model(x_color)
-    net = net.to("cuda")
+    # net = net.to("cuda")
 
-    color_model = ImageFeatures(out_size=512).to("cuda")
-    print(color_model(x).shape)
+    # color_model = ImageFeatures(out_size=512).to("cuda")
+    # print(color_model(x).shape)

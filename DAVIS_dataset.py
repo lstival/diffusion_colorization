@@ -42,7 +42,7 @@ class ConstrativeDataset(Dataset):
             for scene_frame in range(len(os.listdir(scene_path))-1):
                 color_examples.append(self.__transform__(Image.open(f"{scene_path}/{str(0).zfill(5)}.jpg"))) #Img 0
                 samples.append(self.__transform__(Image.open(f"{scene_path}/{str(scene_frame+1).zfill(5)}.jpg"))) # Other Imgs
-                lst_rand_scenes.append(self.__transform__(Image.open(os.path.join(rand_scene_path, f"{str(random.randrange(0,20)).zfill(5)}.jpg" ))))
+                lst_rand_scenes.append(self.__transform__(Image.open(os.path.join(rand_scene_path, f"{str(random.randrange(0,10)).zfill(5)}.jpg" ))))
 
         assert len(samples) == len(color_examples)
 
@@ -72,12 +72,12 @@ class ConstrativeDataset(Dataset):
         """
 
         transform=transforms.Compose([
-                        torchvision.transforms.Resize(150),  # args.image_size + 1/4 *args.image_size
+                        # torchvision.transforms.Resize(150),  # args.image_size + 1/4 *args.image_size
                         torchvision.transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
                         transforms.Resize((self.image_size,self.image_size)),
                         transforms.ToTensor(),
                         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-                        K.color.RgbToYuv(),
+                        # K.color.RgbToYuv(),
                     ])
 
         x_transformed = transform(x)
@@ -127,13 +127,13 @@ class PosProcessingDataset(Dataset):
             # Parch to the video folders
             scene_path = os.path.join(path, scene)
             # Patch to frames created by the trained network
-            pos_scene_path = os.path.join(self.pos_path, scene)
+            pos_scene_path = os.path.join(self.pos_path, scene+'.mp4')
 
             for scene_frame in range(len(os.listdir(scene_path))-1):
                 key_frame = random.randint(0, 10)
                 color_examples.append(self.__transform__(Image.open(f"{scene_path}/{str(key_frame).zfill(5)}.jpg"))) #Img 0
                 samples.append(self.__transform__(Image.open(f"{scene_path}/{str(scene_frame+1).zfill(5)}.jpg"))) # Other Imgs
-                pos_color.append(self.__transform__(Image.open(f"{pos_scene_path}/out_{str(scene_frame).zfill(5)}.jpg"))) # Colorized
+                pos_color.append(self.__transform__(Image.open(f"{pos_scene_path}/{str(scene_frame).zfill(5)}.jpg"))) # Colorized
 
         assert len(samples) == len(color_examples)
 
@@ -146,12 +146,12 @@ class PosProcessingDataset(Dataset):
         """
     
         transform=transforms.Compose([
-                        torchvision.transforms.Resize(150),  # args.image_size + 1/4 *args.image_size
+                        torchvision.transforms.Resize(80),  # args.image_size + 1/4 *args.image_size
                         torchvision.transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
                         transforms.Resize((self.image_size,self.image_size)),
                         transforms.ToTensor(),
                         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-                        K.color.RgbToYuv(),
+                        # K.color.RgbToYuv(),
                     ])
 
         x_transformed = transform(x)
@@ -184,11 +184,12 @@ class DAVISDataset(Dataset):
     the direclety next frames in the video sequence and example image with color.
     """
 
-    def __init__(self, path, image_size, rgb=True, pos_path=None, constrative=None):
+    def __init__(self, path, image_size, rgb=True, pos_path=None, constrative=None, DAVIS=None):
         super(Dataset, self).__init__()
 
         self.path = path
         self.rgb = rgb
+        self.DAVIS = DAVIS
         self.image_size = image_size
 
         self.scenes = os.listdir(path)
@@ -203,15 +204,25 @@ class DAVISDataset(Dataset):
         color_examples = []
         samples = []
 
-        for scene in self.scenes:
-            # Parch to the video folders
-            scene_path = os.path.join(path, scene)
+        if self.DAVIS:
+            for scene in self.scenes:
+                # Parch to the video folders
+                scene_path = os.path.join(path, scene)
 
-            for scene_frame in range(len(os.listdir(scene_path))-1):
-                key_frame = random.randint(0, 10)
-                key_frame = 10
-                color_examples.append(self.__transform__(Image.open(f"{scene_path}/{str(key_frame).zfill(5)}.jpg"))) #Img 0
-                samples.append(self.__transform__(Image.open(f"{scene_path}/{str(scene_frame+1).zfill(5)}.jpg"))) # Other Imgs
+                for scene_frame in range(len(os.listdir(scene_path))-1):
+                    key_frame = random.randint(0, 10)
+                    key_frame = 10
+                    color_examples.append(self.__transform__(Image.open(f"{scene_path}/{str(key_frame).zfill(5)}.jpg"))) #Img 0
+                    samples.append(self.__transform__(Image.open(f"{scene_path}/{str(scene_frame+1).zfill(5)}.jpg"))) # Other Imgs
+        else:
+            for scene in self.scenes:
+            # Parch to the video folders
+                scene_path = os.path.join(path, scene)
+
+                for scene_frame in (os.listdir(scene_path)):
+                    key_frame = (os.listdir(scene_path))[random.randint(0, 10)]
+                    color_examples.append(self.__transform__(Image.open(f"{scene_path}/{str(key_frame)}").convert('RGB'))) #Img 0
+                    samples.append(self.__transform__(Image.open(f"{scene_path}/{str(scene_frame)}").convert('RGB'))) # Other Imgs
 
         assert len(samples) == len(color_examples)
 
@@ -223,12 +234,11 @@ class DAVISDataset(Dataset):
         they normalized and converted to a tensor.
         """
         transform=transforms.Compose([
-            torchvision.transforms.Resize(80),  # args.image_size + 1/4 *args.image_size
+            # torchvision.transforms.Resize(160),  # args.image_size + 1/4 *args.image_size
             torchvision.transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
             transforms.Resize((self.image_size,self.image_size)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            K.color.RgbToYuv(),
         ])
 
         x_transformed = transform(x)
@@ -261,14 +271,14 @@ class ReadData():
     def __init__(self) -> None:
         super().__init__()
 
-    def create_dataLoader(self, dataroot, image_size, batch_size=16, shuffle=False, rgb=True, pos_path=None, constrative=None):
+    def create_dataLoader(self, dataroot, image_size, batch_size=16, shuffle=False, rgb=True, pos_path=None, constrative=None, DAVIS=True):
 
         if pos_path is not None:
-            self.datas = ConstrativeDataset(dataroot, image_size, pos_path)
+            self.datas = PosProcessingDataset(dataroot, image_size, pos_path)
         elif constrative is not None:
             self.datas = ConstrativeDataset(dataroot, image_size)
         else:
-            self.datas = DAVISDataset(dataroot, image_size)
+            self.datas = DAVISDataset(dataroot, image_size, DAVIS)
 
         # self.datas = DAVISDataset(dataroot, image_size, rgb=rgb, pos_path=pos_path, constrative=constrative)
         self.dataloader = torch.utils.data.DataLoader(self.datas, batch_size=batch_size, shuffle=shuffle)
@@ -290,7 +300,7 @@ if __name__ == '__main__':
     dataroot = f"C:/video_colorization/data/train/{used_dataset}"
     pos_dataroot = os.path.join("C:/video_colorization/diffusion/evals", date_str, used_dataset)
 
-    dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=False, constrative=True)
+    dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=False, constrative=False, DAVIS=False)
 
     data = next(iter(dataloader))
 

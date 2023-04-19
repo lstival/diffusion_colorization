@@ -111,24 +111,25 @@ class UNet_pos_process(nn.Module):
         
         self.inc = DoubleConv(c_in, 64)
         self.down1 = Down(64, 128)
-        self.sa1 = SelfAttention(128, 64)
+        self.sa1 = SelfAttention(128, 32)
         self.down2 = Down(128, 256)
-        self.sa2 = SelfAttention(256, 32)
+        self.sa2 = SelfAttention(256, 16)
         self.down3 = Down(256, 256)
-        self.sa3 = SelfAttention(256, 16)
+        self.sa3 = SelfAttention(256, 8)
         
         self.bot1 = DoubleConv(256, max_ch_deep)
         self.bot2 = DoubleConv(max_ch_deep, max_ch_deep)
         self.bot3 = DoubleConv(max_ch_deep, 256)
 
         self.up1 = Up(512, 128)
-        self.sa4 = SelfAttention(128, 32)
+        self.sa4 = SelfAttention(128, 16)
         self.up2 = Up(256, 128)
-        self.sa5 = SelfAttention(128, 64)
+        self.sa5 = SelfAttention(128, 32)
         self.up3 = Up(192, 128)
-        self.sa6 = SelfAttention(64, 32)
+        self.sa6 = SelfAttention(64, 16)
         self.outc = nn.Sequential(
-            nn.Conv2d(128, c_out, kernel_size=1)
+            nn.Conv2d(128, c_out, kernel_size=1),
+            nn.Tanh()
         )
 
     def forward(self, x):
@@ -157,7 +158,7 @@ class UNet_pos_process(nn.Module):
 
 ##### Evaluate the model
 #load the dataloader
-import DAVIS_dataset_pos as ld
+import DAVIS_dataset as ld
 dataLoader = ld.ReadData()
 import argparse
 from tqdm import tqdm
@@ -165,21 +166,22 @@ from tqdm import tqdm
 model_name = get_model_time()
 parser = argparse.ArgumentParser()
 args, unknown = parser.parse_known_args()
-args.batch_size = 8
-args.image_size = 128
-args.time_dim = 512
+args.batch_size = 16
+args.image_size = 64
+args.time_dim = 1024
 args.run_name = f"POS_{model_name}"
-args.lr = 3e-3
-args.epochs = 101
+args.lr = 1e-3
+args.epochs = 501
 
 ### Dataset load
 root_model_path = r"C:\video_colorization\diffusion\models"
-date_str = "DDPM_20230218_090502"
+date_str = "UNET_20230406_182152"
 device = "cuda"
-used_dataset = "rallye_DAVIS"
+used_dataset = "DAVIS_val"
 dataroot = f"C:/video_colorization/data/train/{used_dataset}"
+path_colorized_frames = f"C:/video_colorization/diffusion/temp_result/"
 
-pos_dataroot = os.path.join("C:/video_colorization/diffusion/evals", date_str, used_dataset)
+pos_dataroot = os.path.join(path_colorized_frames, used_dataset, date_str)
 dataloader = dataLoader.create_dataLoader(dataroot, args.image_size, args.batch_size, shuffle=False, pos_path=pos_dataroot)
 
 ### Creating the Folders
@@ -193,7 +195,8 @@ os.makedirs(pos_path_save_models, exist_ok=True)
 pos_process_model = UNet_pos_process().to(device)
 
 mse = nn.MSELoss()
-SSIM = SSIMLoss(data_range=1.)
+# SSIM = SSIMLoss(data_range=1.)
+criterion = SSIMLoss(data_range=-1.)
 optimizer = optim.AdamW(pos_process_model.parameters(), lr=args.lr)
 
 logger = SummaryWriter(os.path.join("runs", args.run_name))
@@ -206,19 +209,23 @@ for epoch in range(args.epochs):
         img, img_gray, img_color, next_frame, pos_color = create_samples(data)
 
         out = pos_process_model(pos_color)
-        loss = mse(img, out)
+        loss = criterion(img, out)
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         pbar.set_postfix(MSE=loss.item())
-        logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+        logger.add_scalar("SSIM", loss.item(), global_step=epoch * l + i)
 
     if epoch % 10 == 0:
-        img_out = tensor_lab_2_rgb(out).to("cpu")
+        img_out = tensor_2_img(out).to("cpu")
         
+        plot_images(tensor_2_img(img))
         plot_images(img_out)
+
         save_images(img_out, os.path.join(pos_path_save, f"{epoch}.jpg"))
 
         torch.save(pos_process_model.state_dict(), os.path.join(pos_path_save_models, f"ckpt.pt"))
         torch.save(optimizer.state_dict(), os.path.join(pos_path_save_models, f"optim.pt"))
+
+print("Done")

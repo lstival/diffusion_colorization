@@ -9,10 +9,11 @@ import cv2
 from tqdm import tqdm
 
 # My patchs
-import DAVIS_dataset_pos as ld
+import DAVIS_dataset as ld
 from modules import *
 from ddpm import *
 from utils import *
+from u_net import *
 
 import shutil
 # ================ Initial Infos =====================
@@ -20,11 +21,15 @@ import argparse
 model_name = get_model_time()
 parser = argparse.ArgumentParser()
 args, unknown = parser.parse_known_args()
-args.batch_size = 1
+args.batch_size = 8
 args.image_size = 64
 args.time_dim = 1024
+args.in_ch=128
+args.noise_steps = 501
+args.rgb = True
 
-dataset = "mini_DAVIS"
+dataset = "DAVIS_val"
+# dataset = "rallye_DAVIS"
 batch_size = args.batch_size
 device = "cuda"
 
@@ -49,32 +54,38 @@ except FileNotFoundError:
 
 
 # ================ Read Model =====================
-root_model_path = r"C:\video_colorization\diffusion\models"
-date_str = "DDPM_20230224_020521"
+root_model_path = r"C:\video_colorization\diffusion\unet_model"
+# date_str = "UNET_20230404_120711"
+date_str = "UNET_k_20230414_133608"
 
-# Path to load the weights
-model_path = os.path.join(root_model_path, date_str, "ckpt.pt")
-feature_path = os.path.join(root_model_path, date_str, "feature.pt")
+### Encoder
+feature_model = Encoder(c_in=3, c_out=args.in_ch//2, return_subresults=True, img_size=args.image_size).to(device)
+feature_model = load_trained_weights(feature_model, date_str, "feature")
 
-# Load the weights
-model_weights = torch.load(model_path)
-feature_weights = torch.load(feature_path)
+# ### Color Neck
+color_neck = Vit_neck(batch_size=batch_size, image_size=image_size, out_chanels=int((args.in_ch//2)*8*8))
+color_neck = load_trained_weights(color_neck, date_str, "vit_neck")
+color_neck.eval()
 
-# Set features weights
-feature_model = ImageFeatures(out_size=args.time_dim).to(device)
-feature_model.load_state_dict(feature_weights)
-feature_model.eval()
+### Decoder
+decoder = Decoder(c_in=args.in_ch, c_out=3, img_size=args.image_size, vit_neck=True).to(device)
+decoder = load_trained_weights(decoder, date_str, "decoder")
 
-# Set revser diffusion model weights
-model = UNet_conditional(time_dim=args.time_dim, c_in=2, c_out=2).to(device)
-model.load_state_dict(model_weights)
+### Diffusion process
+# diffusion = Diffusion(img_size=8, device=device, noise_steps=args.noise_steps)
 
-# Create the diffusion process
-diffusion = Diffusion(img_size=args.image_size, device=device)
+# diffusion_model = UNet_conditional(c_in=args.in_ch, c_out=args.in_ch, time_dim=args.time_dim, img_size=8).to(device)
+# diffusion_model = load_trained_weights(diffusion_model, date_str, "ckpt")
+
+# ### Labels generation
+# prompt = Vit_neck(batch_size=batch_size, image_size=args.image_size, out_chanels=args.time_dim)
+# prompt = load_trained_weights(prompt, date_str, "prompt")
 
 # ================ Loop all videos inside gray folder =====================
 pbar = tqdm(list_gray_videos)
 for video_name in pbar:
+    #Count for frames in video
+    count_frame_idx=0
     pbar.set_description(f"Processing: {video_name}")
 
     vidcap = cv2.VideoCapture(f"{path_gray_video}{video_name}")
@@ -95,7 +106,7 @@ for video_name in pbar:
 
     # ================ Read images to make the video =====================
     dataLoader = ld.ReadData()
-    dataloader = dataLoader.create_dataLoader(path_temp_gray_frames, args.image_size, batch_size)
+    dataloader = dataLoader.create_dataLoader(path_temp_gray_frames, args.image_size, batch_size, rgb=args.rgb)
 
     # ============== Frame Production ===================
     imgs_2 = []
@@ -116,20 +127,50 @@ for video_name in pbar:
 
     img_count = 0
     with torch.no_grad():
-        model.eval()
+        # diffusion_model.eval()
+        feature_model.eval()
+        decoder.eval()
+        # prompt.eval()
+
         pbar = tqdm(dataloader)
         for i, (data) in enumerate(pbar):
             # Set the imagens from dataloader
-            img, img_gray, img_color, next_frame = create_samples(data)
+            img, img_gray, img_color, next_frame = create_samples(data)            
+            #### Images
+            ### Gray Image
+            input_img = img_gray.to(device)
+            ### Ground truth of the Gray Img
+            gt_img = img.to(device)
+            ### Get the video Key frame
+            key_frame = img_color.to(device)
 
-            # Use Vit to create label to produce sample from noise
-            labels = feature_model(img_gray)
+            l = gt_img.shape[0]
 
-            # Reconstruct frame from label produced by VGG
-            sampled_images = diffusion.sample(model, n=args.batch_size, labels=labels, gray_img=img_gray[:,:1], in_ch=2)
+            ### Labels to create sample from noise
+            # labels = prompt(key_frame)
 
-            for img_idx in range(args.batch_size):
-                save_images(sampled_images[img_idx], os.path.join(colored_frames_save,  f"{str(i).zfill(5)}.jpg"))
+            ### Encoder (create feature representation)
+            gt_out, skips = feature_model(input_img)
+
+            # ### Exctract color from key frame
+            color_feature = color_neck(key_frame)
+
+            # ### Join the Color features with the Encoder out
+            neck_features = torch.cat((gt_out, color_feature.view(-1,args.in_ch//2,8,8)), axis=1)
+
+            ### Diffusion (due the noise version of input and predict)
+            # x = diffusion.sample(diffusion_model, n=l, labels=labels, gray_img=img_gray, in_ch=args.in_ch, create_img=False)
+
+            ### Decoder (create the expected sample using denoised feature space)
+            sampled_images = decoder((neck_features, skips))
+            # sampled_images = decoder((x, skips))
+
+            for img_idx in range(len(sampled_images)):
+                if args.rgb:
+                    save_images(tensor_2_img(sampled_images[img_idx].unsqueeze(0)), os.path.join(colored_frames_save,  f"{str(count_frame_idx).zfill(5)}.jpg"))
+                else:
+                    save_images(tensor_lab_2_rgb(sampled_images[img_idx].unsqueeze(0)), os.path.join(colored_frames_save,  f"{str(count_frame_idx).zfill(5)}.jpg"))
+                count_frame_idx+=1
 
     frame_2_video(colored_frames_save, f"{colored_video_path}/{video_name}_colored.mp4", img_start_name=None)
 

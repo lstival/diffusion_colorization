@@ -48,7 +48,7 @@ transform=transforms.Compose([
 ### Training
 import DAVIS_dataset as ld
 model = "VIT"
-image_size=128
+image_size=64
 batch_size=8
 model_name = get_model_time()
 epochs = 201
@@ -69,10 +69,10 @@ vgg_yuv.train()
 
 ##### Read Data
 dataLoader = ld.ReadData()
-used_dataset = "DAVIS"
+used_dataset = "kinetics"
 dataroot = f"C:/video_colorization/data/train/{used_dataset}"
 # dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
-dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=False, rgb=False, constrative=True)
+dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=False, rgb=True, constrative=True, DAVIS=True)
 
 optimizer = optim.AdamW(vgg_yuv.parameters(), lr=lr)
 

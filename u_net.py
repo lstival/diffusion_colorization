@@ -108,12 +108,12 @@ class Encoder(nn.Module):
     def __init__(self, c_in=3, c_out=128, img_size=128, return_subresults=False) -> None:
         super().__init__()
         self.subresults = return_subresults
-        self.inc = DoubleConv(c_in, 32)
-        self.down1 = Down(32, 64)
-        self.sa1 = SelfAttention(64, img_size//2)
-        self.down2 = Down(64, 128)
-        self.sa2 = SelfAttention(128, img_size//4)
-        self.down3 = Down(128, c_out)
+        self.inc = DoubleConv(c_in, c_out//4)
+        self.down1 = Down(c_out//4, c_out//2)
+        self.sa1 = SelfAttention(c_out//2, img_size//2)
+        self.down2 = Down(c_out//2, c_out)
+        self.sa2 = SelfAttention(c_out, img_size//4)
+        self.down3 = Down(c_out, c_out)
         self.sa3 = SelfAttention(c_out, img_size//8)
 
     def forward(self, x):
@@ -131,16 +131,19 @@ class Encoder(nn.Module):
             return x4
 
 class Decoder(nn.Module):
-    def __init__(self, c_in=2, c_out=2, img_size=128) -> None:
+    def __init__(self, c_in=128, c_out=3, img_size=128, vit_neck=False) -> None:
         super().__init__()
-        self.up1 = Up(c_in, 64)
-        self.sa4 = SelfAttention(64, img_size//4)
-        self.up2 = Up(128, 32)
-        self.sa5 = SelfAttention(32, img_size//2)
-        self.up3 = Up(64, 32)
-        self.sa6 = SelfAttention(32, img_size)
+        self.vit_neck = vit_neck
+        self.inc = DoubleConv(c_in, c_in//2)
+        self.up1 = Up(c_in, c_in//4)
+        self.sa4 = SelfAttention(c_in//4, img_size//4)
+        self.up2 = Up(c_in//2, c_in//8)
+        self.sa5 = SelfAttention(c_in//8, img_size//2)
+        self.up3 = Up(c_in//4, c_in//4)
+        self.sa6 = SelfAttention(c_in//4, img_size)
         self.outc = nn.Sequential(
-            nn.Conv2d(32, c_out, kernel_size=1)
+            nn.Conv2d(c_in//4, c_out, kernel_size=1),
+            nn.Tanh()
         )
 
     def forward(self, x):
@@ -150,6 +153,8 @@ class Decoder(nn.Module):
         x3,x2,x1 = skips
 
         # Forward the process
+        if self.vit_neck:
+            x = self.inc(x)
         x = self.up1(x, x3)
         x = self.sa4(x)
         x = self.up2(x, x2)
@@ -175,21 +180,3 @@ def load_vgg_model(out_size=1024, img_size=128, svd_model_name="VIT_20230306_161
     vgg_yuv.load_state_dict(model_wights)
 
     return vgg_yuv
-
-def load_trained_weights(model, model_name, file_name):
-    """
-    model: Instance of a model to get trained weights
-    model_name: Name of trained model (name of the fold with the files)
-    file_name: Name of the file with the weigths
-
-    return the model with the trained weights.
-    """
-
-    #Path to load the saved weights 
-    path_weights = os.path.join("unet_model", model_name, f"{file_name}.pt")
-    # Load the weights
-    model_wights = torch.load(path_weights)
-    # Instance the weights loaded to the model recivied from parameter
-    model.load_state_dict(model_wights)
-
-    return model
