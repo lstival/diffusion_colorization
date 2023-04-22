@@ -7,23 +7,27 @@ import read_data as ld
 # Load the Network to increase the colorization
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+# import torch.nn.functional as F
 from ViT import Vit_neck
-import torchvision.models as models
+# import torchvision.models as models
 from u_net import *
 from modules import Reverse_diffusion
 
-def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_diffusion=False, only_difussion=False):
+class DiffusionModels():
+    def __init__(self, rever_diffusion=False) -> None:
+        self.rever_diffusion = rever_diffusion
 
-    ### Load dataset 
-    dataLoader = ld.ReadData()
-    dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=True)
+    def train_vit_neck(self, in_ch, c_out, noise_steps, time_dim, pretained_name):
+        """
+        IF vit neck is true, return the instance of Encoder and Decoder pre trained.
+        Also load the Vitneck trained during the encoder and Decoder train.
 
-    ### Models
+        Valid if rever diffusion is True, else return the classical U_net to reverse Diffusion.
+        The return is a tuple where all models are present in the order:
 
-    ### Vit neck
-    if vit_neck:
-        ### Encoder and decoder models
+        feature_model, decoder, color_neck, diffusion, diffusion_model
+
+        """
         feature_model = Encoder(c_in=3, c_out=in_ch//2, return_subresults=True, img_size=image_size).to(device)
         feature_model = load_trained_weights(feature_model, pretained_name, "feature")
         feature_model.eval()
@@ -38,25 +42,30 @@ def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_
 
         ### Diffusion process
         diffusion = Diffusion(img_size=8, device=device, noise_steps=noise_steps)
-        diffusion_model = UNet_conditional(img_size=8, c_in=in_ch, c_out=in_ch, time_dim=time_dim).to(device)
-        # diffusion_model = Reverse_diffusion(c_in=in_ch, c_out=in_ch, time_dim=time_dim, img_size=8).to(device)
+        if self.rever_diffusion:
+            diffusion_model = Reverse_diffusion(c_in=in_ch, c_out=in_ch, time_dim=time_dim, img_size=8).to(device)
+        else:
+            diffusion_model = UNet_conditional(img_size=8, c_in=in_ch, c_out=in_ch, time_dim=time_dim).to(device)
         diffusion_model.train()
+        
+        return (feature_model, decoder, color_neck, diffusion, diffusion_model)
 
-    elif only_difussion:
-        ### Encoder and decoder models
-        # feature_model = Encoder(c_in=in_ch, c_out=in_ch, return_subresults=True, img_size=image_size).to(device)
-        # feature_model = load_trained_weights(feature_model, pretained_name, "feature")
-        # feature_model.eval()
-
-        # decoder = Decoder(c_in=in_ch, c_out=3, img_size=image_size).to(device)
-        # decoder.train()
-
-        ### Diffusion process
+    def train_only_diffusion(self, noise_steps, time_dim):
+        """
+        Create the diffusion model responsable to create the noise,
+        and create the reverse network
+        """
         diffusion = Diffusion(img_size=image_size, device=device, noise_steps=noise_steps)
         diffusion_model = UNet_conditional(c_in=3, c_out=3, time_dim=time_dim, img_size=image_size).to(device)
         diffusion_model.train()
 
-    else:
+        return (diffusion, diffusion_model)
+
+    def train_default(self, pretained_name, noise_steps, time_dim):
+        """
+        Create the diffusion model to be trained, using the Encoder and Decaoder pre trained.
+        Return a tuple contaning all models
+        """
         ### Encoder and decoder models
         feature_model = Encoder(c_in=3, c_out=in_ch//2, return_subresults=True, img_size=image_size).to(device)
         feature_model = load_trained_weights(feature_model, pretained_name, "feature")
@@ -64,28 +73,80 @@ def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_
 
         decoder = Decoder(c_in=in_ch, c_out=3, img_size=image_size).to(device)
         decoder = load_trained_weights(decoder, pretained_name, "decoder")
-        decoder.eval()
+        decoder.train()
 
         ### Diffusion process
-        diffusion = Diffusion(img_size=16, device=device, noise_steps=noise_steps)
-        # diffusion_model = Reverse_diffusion(c_in=in_ch//2, c_out=in_ch//2, time_dim=time_dim, img_size=8).to(device)
-        diffusion_model = UNet_conditional(c_in=in_ch//2, c_out=in_ch//2, time_dim=time_dim, img_size=16).to(device)
+        diffusion = Diffusion(img_size=8, device=device, noise_steps=noise_steps)
+
+        if self.rever_diffusion:
+            diffusion_model = Reverse_diffusion(c_in=in_ch//2, c_out=in_ch//2, time_dim=time_dim, img_size=8).to(device)
+        else:
+            diffusion_model = UNet_conditional(c_in=in_ch//2, c_out=in_ch//2, time_dim=time_dim, img_size=8).to(device)
         diffusion_model.train()
 
-    ### Labels generation
-    prompt = Vit_neck(batch_size=batch_size, image_size=image_size, out_chanels=time_dim)
-    prompt.train()
+        return (feature_model, decoder, diffusion, diffusion_model)
 
-    ### Optimizers
-    mse = nn.MSELoss()
-    criterion = SSIMLoss(data_range=1.)
-    criterion = criterion.to(device)
+
+
+class TrainDiffusion():
+    def __init__(self, dataroot, image_size, time_dim) -> None:
+
+        self.dataroot = dataroot
+        self.image_size = image_size
+        self.time_dim = time_dim
+        self.run_name = get_model_time()
+
+    def read_datalaoder(self):
+        """
+        Get the data from the dataroot and return the dataloader
+        """
+        ### Load dataset 
+        dataLoader = ld.ReadData()
+        dataloader = dataLoader.create_dataLoader(self.dataroot, image_size, batch_size, shuffle=True)
+        return dataloader
+    
+    def load_prompt(self):
+        """
+        Return the prompt responsable to generate the input to condiciona diffusion
+        and return the model.
+        """
+        prompt = Vit_neck(batch_size=batch_size, image_size=self.image_size, out_chanels=self.time_dim)
+        prompt.train()
+
+    def load_losses(self, mse=True):
+        if mse:
+            criterion = nn.MSELoss()
+        else:
+            criterion = SSIMLoss(data_range=1.)
+
+        criterion = criterion.to(device)
+        return criterion
+    
+    def train(self, lr):
+        """
+        Method to train the reverse diffusion model and the prompt
+        """
+
+        params_list = list(diffusion_model.parameters()) + list(prompt.parameters()) 
+        optimizer = optim.AdamW(params_list, lr=lr)
+
+        criterion = self.load_losses()
+
+        logger = SummaryWriter(os.path.join("runs", self.run_name))
+
+
+
+
+
+
+
+def train_difussion(pretained_name, vit_neck=False ,test_diffusion=False, only_difussion=False):
+
 
     ### Diffusion train
-    params_list = list(diffusion_model.parameters()) + list(prompt.parameters()) 
-    optimizer = optim.AdamW(params_list, lr=lr)
 
-    logger = SummaryWriter(os.path.join("runs", run_name))
+
+    
     ### Train Loop
     for epoch in range(epochs):
         
@@ -225,48 +286,23 @@ def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_
                 torch.save(color_neck.state_dict(), os.path.join("unet_model", run_name, f"vit_neck.pt"))
 
 if __name__ == "__main__":
-    model_name = get_model_time()
-    run_name = f"UNET_k_{model_name}"
-    epochs = 501
-    noise_steps = 1000
+    # model_name = get_model_time()
+    # run_name = f"UNET_k_{model_name}"
+    # epochs = 201
+    # noise_steps = 1000
 
-    image_size=128
-    batch_size=64
-    device="cuda"
-    lr=2e-3
-    time_dim=1024
-    # dataroot = r"C:\video_colorization\data\train\COCO_val2017"
+    # image_size=128
+    # batch_size=8
+    # device="cuda"
+    # lr=2e-3
+    # time_dim=1024
+    # # dataroot = r"C:\video_colorization\data\train\COCO_val2017"
+    # # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
     # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
-    dataroot = r"C:\video_colorization\data\train\mini_kinetics"
-    # dataroot = r"C:\video_colorization\data\train\rallye_DAVIS"
-    in_ch=128
+    # # dataroot = r"C:\video_colorization\data\train\rallye_DAVIS"
+    # in_ch=128
 
-    # Train model
-        # # # train_difussion("UNET_20230330_132559", vit_neck=True, test_diffusion=False, only_difussion=False)
-    # train(vit_neck=False)
-    # train_difussion("UNET_k_20230418_233113", vit_neck=False, test_diffusion=False, only_difussion=True)
-    train_difussion("UNET_k_20230420_102944", vit_neck=False, test_diffusion=False, only_difussion=False)
-
-    # img = torch.ones((batch_size, 3, image_size, image_size)).to(device)
-
-    # feature_mdel = Encoder(c_in=3, return_subresults=True,img_size=image_size).to(device)
-    # decoder = Decoder(c_in=256,img_size=image_size).to(device)
-
-    # diffusion = Diffusion(img_size=image_size, device=device, noise_steps=noise_steps)
-    # diffusion_model = UNet_conditional(c_in=256, c_out=256, time_dim=time_dim).to(device)
-    # diffusion_model.train()
-
-    # out = feature_mdel(img)
-    # dec_out = decoder(out)
-
+    diffusion_models = DiffusionModels()
+    loaded_odels = diffusion_models.train_default("UNET_k_20230420_102944", noise_steps, time_dim)
+    feature_model, decoder, diffusion, diffusion_model = loaded_odels
     print("Done")
-
-    # decoder = Decoder(c_in=512)
-    # a = torch.ones([2, 512, 8, 8])
-    # decoder(a)
-
-    # x4.shape
-    # torch.Size([4, 256, 16, 16])
-
-    # img = torch.ones((4,3,128,128))
-    # out = model(img)

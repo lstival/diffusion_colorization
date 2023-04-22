@@ -9,7 +9,7 @@ import cv2
 from tqdm import tqdm
 
 # My patchs
-import DAVIS_dataset as ld
+import read_data as ld
 from modules import *
 from ddpm import *
 from utils import *
@@ -21,15 +21,17 @@ import argparse
 model_name = get_model_time()
 parser = argparse.ArgumentParser()
 args, unknown = parser.parse_known_args()
-args.batch_size = 8
-args.image_size = 64
+
 args.time_dim = 1024
-args.in_ch=128
-args.noise_steps = 501
+args.noise_steps = 1000
 args.rgb = True
 
-dataset = "DAVIS_val"
-# dataset = "rallye_DAVIS"
+args.batch_size = 8
+args.image_size = 128
+args.in_ch=128
+
+# dataset = "mini_kinetics"
+dataset = "rallye_DAVIS"
 batch_size = args.batch_size
 device = "cuda"
 
@@ -56,19 +58,20 @@ except FileNotFoundError:
 # ================ Read Model =====================
 root_model_path = r"C:\video_colorization\diffusion\unet_model"
 # date_str = "UNET_20230404_120711"
-date_str = "UNET_k_20230414_133608"
+date_str = "UNET_k_20230420_102944"
 
 ### Encoder
 feature_model = Encoder(c_in=3, c_out=args.in_ch//2, return_subresults=True, img_size=args.image_size).to(device)
 feature_model = load_trained_weights(feature_model, date_str, "feature")
 
 # ### Color Neck
-color_neck = Vit_neck(batch_size=batch_size, image_size=image_size, out_chanels=int((args.in_ch//2)*8*8))
-color_neck = load_trained_weights(color_neck, date_str, "vit_neck")
-color_neck.eval()
+# color_neck = Vit_neck(batch_size=batch_size, image_size=image_size, out_chanels=int((args.in_ch//2)*8*8))
+# color_neck = load_trained_weights(color_neck, date_str, "vit_neck")
+# color_neck.eval()
 
 ### Decoder
-decoder = Decoder(c_in=args.in_ch, c_out=3, img_size=args.image_size, vit_neck=True).to(device)
+# decoder = Decoder(c_in=args.in_ch, c_out=3, img_size=args.image_size).to(device)
+decoder = Decoder(c_in=args.in_ch, c_out=3, img_size=args.image_size).to(device)
 decoder = load_trained_weights(decoder, date_str, "decoder")
 
 ### Diffusion process
@@ -153,17 +156,17 @@ for video_name in pbar:
             gt_out, skips = feature_model(input_img)
 
             # ### Exctract color from key frame
-            color_feature = color_neck(key_frame)
+            # color_feature = color_neck(key_frame)
 
             # ### Join the Color features with the Encoder out
-            neck_features = torch.cat((gt_out, color_feature.view(-1,args.in_ch//2,8,8)), axis=1)
+            # neck_features = torch.cat((gt_out, color_feature.view(-1,args.in_ch//2,8,8)), axis=1)
 
             ### Diffusion (due the noise version of input and predict)
             # x = diffusion.sample(diffusion_model, n=l, labels=labels, gray_img=img_gray, in_ch=args.in_ch, create_img=False)
 
             ### Decoder (create the expected sample using denoised feature space)
-            sampled_images = decoder((neck_features, skips))
-            # sampled_images = decoder((x, skips))
+            # sampled_images = decoder((neck_features, skips))
+            sampled_images = decoder((gt_out, skips))
 
             for img_idx in range(len(sampled_images)):
                 if args.rgb:

@@ -12,12 +12,12 @@ from torchmetrics import CosineSimilarity
 from tqdm import tqdm
 
 # file with read data from DAVIS dataset
-import DAVIS_dataset as ld
+import read_data as ld
 # ColorAttention class to exctract color information
 from modules import EMA, ColorAttention, ImageFeatures, UNet_conditional
 from utils import *
 from piq import SSIMLoss
-from lab_vgg import *
+# from lab_vgg import *
 # from ViT import Vit_neck
 
 # Set the random seed
@@ -62,9 +62,7 @@ class Diffusion:
         # logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
-            x = torch.randn((n, 3, int(self.img_size), int(self.img_size))).to(self.device)
-            # x = torch.randn((n, in_ch, 8, 8)).to(self.device)
-            # for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
+            x = torch.randn((n, in_ch, int(self.img_size), int(self.img_size))).to(self.device)
             for i in reversed(range(1, self.noise_steps)):
                 t = (torch.ones(n) * i).long().to(self.device)
                 predicted_noise = model(x, t, labels)
@@ -82,35 +80,13 @@ class Diffusion:
         model.train()
 
         if create_img:
-            # y = scale_0_and_1(gray_img)
-            # try:
-            #     y,u,v = torch.split(x, 1, dim=1)
-            # except:
-            #     u,v = torch.split(x, 1, dim=1)
-            # x = torch.cat([y[:,:1], u, v], 1)
-
             x = tensor_lab_2_rgb(x)
 
         return x
 
-# def load_vgg_model(out_size=1024, img_size=128, svd_model_name="VGG_20230227_223822"):
-#     """
-#     Load the pretrained model (VGG in YUV color space), and
-#     return the model.
-#     """
-#     if svd_model_name.split("_")[0] == "VGG":
-#         vgg_yuv = VGG_19_YUV(out_size=out_size, img_size=img_size)
-#     else:
-#         vgg_yuv = Vit_neck()
-
-#     saved_model = os.path.join("models", svd_model_name, f"ckpt.pt")
-#     model_wights = torch.load(saved_model)
-#     vgg_yuv.load_state_dict(model_wights)
-
-#     return vgg_yuv
-    
 def train(args):
     setup_logging(args.run_name)
+    logger = SummaryWriter(os.path.join("runs", args.run_name))
     
     # Dataloader info
     dataLoader = ld.ReadData()
@@ -181,7 +157,7 @@ def train(args):
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
-        if epoch % 20 == 0:
+        if epoch % 10 == 0:
             # l = len(labels)
             l = 5
             if len(labels) < l:

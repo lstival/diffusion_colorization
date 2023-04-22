@@ -2,7 +2,7 @@ import torch
 import os
 from utils import *
 from ddpm import *
-import DAVIS_dataset as ld
+import read_data as ld
 
 # Load the Network to increase the colorization
 import torch
@@ -119,7 +119,7 @@ class Encoder(nn.Module):
     def forward(self, x):
         x1 = self.inc(x)
         x2 = self.down1(x1)
-        x2 = self.sa1(x2)
+        # x2 = self.sa1(x2)
         x3 = self.down2(x2)
         x3 = self.sa2(x3)
         x4 = self.down3(x3)
@@ -158,14 +158,14 @@ class Decoder(nn.Module):
         x = self.up1(x, x3)
         x = self.sa4(x)
         x = self.up2(x, x2)
-        x = self.sa5(x)
+        # x = self.sa5(x)
         x = self.up3(x, x1)
-        x = self.sa6(x)
+        # x = self.sa6(x)
 
         output = self.outc(x)
         return output
 
-def load_vgg_model(out_size=1024, img_size=128, svd_model_name="VIT_20230306_161039", batch_size=batch_size):
+def load_vgg_model(batch_size, out_size=1024, img_size=128, svd_model_name="VIT_20230306_161039"):
     """
     Load the pretrained model (VGG in YUV color space), and
     return the model.
@@ -180,3 +180,23 @@ def load_vgg_model(out_size=1024, img_size=128, svd_model_name="VIT_20230306_161
     vgg_yuv.load_state_dict(model_wights)
 
     return vgg_yuv
+
+if __name__ == "__main__":
+    print("main")
+
+    device = "cuda"
+    in_ch = 128
+    image_size=128
+    batch_size=16
+
+    feature_model = Encoder(c_in=3, c_out=in_ch//2, return_subresults=True, img_size=image_size).to(device)
+
+    decoder = Decoder(c_in=in_ch, c_out=3, img_size=image_size).to(device)
+
+    input_img = torch.zeros((batch_size,3,image_size,image_size)).to(device)
+
+    gt_out, skips = feature_model(input_img)
+
+    dec_out = decoder((gt_out, skips))
+
+    print(f"dec_out shape: {dec_out.shape}")

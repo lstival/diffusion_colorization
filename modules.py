@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from ViT import Vit_neck
-import torchvision.models as models
-from lab_vgg import *
+# from ViT import Vit_neck
+# import torchvision.models as models
+# from lab_vgg import *
 
 class EMA:
     def __init__(self, beta):
@@ -202,9 +202,8 @@ class Reverse_diffusion(nn.Module):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
-        c_in = c_in*2
 
-        self.down1 = ReverseConv(c_in//2, c_in*2)
+        self.down1 = ReverseConv(c_in, c_in*2)
         self.sa1 = SelfAttention(c_in*2, img_size)
         self.down2 = ReverseConv(c_in*2, c_in*4)
         self.sa2 = SelfAttention(c_in*4, img_size)
@@ -212,8 +211,7 @@ class Reverse_diffusion(nn.Module):
         self.sa3 = SelfAttention(c_in*4, img_size)
 
         self.bot1 = DoubleConv(c_in*4, c_in*8)
-        self.bot2 = DoubleConv(c_in*8, c_in*8)
-        self.bot3 = DoubleConv(c_in*8, c_in*4)
+        self.bot2 = DoubleConv(c_in*8, c_in*4)
         
         self.up1 = ReverseConv(c_in*4, c_in*4)
         self.sa4 = SelfAttention(c_in*4, img_size)
@@ -251,7 +249,6 @@ class Reverse_diffusion(nn.Module):
 
         x4 = self.bot1(x4)
         x4 = self.bot2(x4)
-        x4 = self.bot3(x4)
 
         x = self.up1(x4, t)
         x = self.sa4(x)
@@ -268,9 +265,8 @@ class UNet_conditional(nn.Module):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
-        c_in=c_in//4
         
-        self.inc = DoubleConv(c_in*4, c_in*2)
+        self.inc = DoubleConv(c_in, c_in*2)
         self.down1 = Down(c_in*2, c_in*4)
         self.sa1 = SelfAttention(c_in*4, img_size//2)
         self.down2 = Down(c_in*4, c_in*8)
@@ -279,8 +275,7 @@ class UNet_conditional(nn.Module):
         self.sa3 = SelfAttention(c_in*8, img_size//8)
         
         self.bot1 = DoubleConv(c_in*8, max_ch_deep)
-        self.bot2 = DoubleConv(max_ch_deep, max_ch_deep)
-        self.bot3 = DoubleConv(max_ch_deep, c_in*8)
+        self.bot2 = DoubleConv(max_ch_deep, c_in*8)
 
         self.up1 = Up(c_in*16, c_in*4)
         self.sa4 = SelfAttention(c_in*4, img_size//4)
@@ -317,7 +312,6 @@ class UNet_conditional(nn.Module):
 
         x4 = self.bot1(x4)
         x4 = self.bot2(x4)
-        x4 = self.bot3(x4)
 
         x = self.up1(x4, x3, t)
         x = self.sa4(x)
@@ -342,26 +336,26 @@ class ImageFeatures(nn.Module):
         # Load the YUV pre trained model
         self.out = self.__load_vgg_model__()
 
-    def __load_vgg_model__(self):
-        """
-        Load the pretrained model (VGG in YUV color space), and
-        return the model.
-        """
-        saved_model = os.path.join("models", self.svd_model_name, f"ckpt.pt")
-        model_wights = torch.load(saved_model)
-        vgg_yuv = VGG_19_YUV(out_size=out_size, img_size=self.img_size).to(device)
-        vgg_yuv.load_state_dict(model_wights)
-        return vgg_yuv
+    # def __load_vgg_model__(self):
+    #     """
+    #     Load the pretrained model (VGG in YUV color space), and
+    #     return the model.
+    #     """
+    #     saved_model = os.path.join("models", self.svd_model_name, f"ckpt.pt")
+    #     model_wights = torch.load(saved_model)
+    #     vgg_yuv = VGG_19_YUV(out_size=out_size, img_size=self.img_size).to(device)
+    #     vgg_yuv.load_state_dict(model_wights)
+    #     return vgg_yuv
 
-    def forward(self, x):
-        out = self.out(x)
-        return out
+    # def forward(self, x):
+    #     out = self.out(x)
+    #     return out
 
         
 
 if __name__ == '__main__':
     import argparse 
-    from ddpm import *
+    # from ddpm import *
     parser = argparse.ArgumentParser()
     args, unknown = parser.parse_known_args()
     args.batch_size = 4
@@ -369,16 +363,16 @@ if __name__ == '__main__':
     # net = UNet(device="cpu")
     # net = UNet_conditional(c_in=2, c_out=2, time_dim=1024, device="cuda")
 
-    diff_model = Reverse_diffusion(c_in=64, c_out=64, time_dim=1024, device="cuda").to(device)
-    diffusion = Diffusion(img_size=args.image_size, device="cuda")
-    labels = torch.zeros((args.batch_size, 1024)).to(device)
+    diff_model = Reverse_diffusion(c_in=64, c_out=64, time_dim=1024, device="cuda").to("cuda")
+    # diffusion = Diffusion(img_size=args.image_size, device="cuda")
+    labels = torch.zeros((args.batch_size, 1024)).to("cuda")
 
-    x = torch.ones((args.batch_size,64,8,8)).to(device)
+    x = torch.ones((args.batch_size,64,8,8)).to("cuda")
 
-    t = diffusion.sample_timesteps(x.shape[0]).to(device)
-    x_t, noise = diffusion.noise_images(x, t)
+    # t = diffusion.sample_timesteps(x.shape[0]).to(device)
+    # x_t, noise = diffusion.noise_images(x, t)
 
-    out = diff_model(x, t, labels)
+    # out = diff_model(x, t, labels)
 
     # diffusion = Diffusion(img_size=args.image_size, device="cuda")
     # feature_model = ImageFeatures(out_size=1024).to("cuda")

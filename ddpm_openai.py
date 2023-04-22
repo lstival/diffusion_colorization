@@ -35,39 +35,41 @@ from transformers import CLIPTextModel, CLIPTokenizer
 from diffusers import AutoencoderKL, UNet2DConditionModel, PNDMScheduler
 
 
-## Pre treinaed loads
-# 1. Load the autoencoder model which will be used to decode the latents into image space. 
-vae = AutoencoderKL.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="vae")
+# ## Pre treinaed loads
+# # 1. Load the autoencoder model which will be used to decode the latents into image space. 
+# vae = AutoencoderKL.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="vae")
 
-# 2. Load the tokenizer and text encoder to tokenize and encode the text. 
+# # 2. Load the tokenizer and text encoder to tokenize and encode the text. 
 processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
-model = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
+model = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k',)
 
-# 2. Load the tokenizer and text encoder to tokenize and encode the text. 
-tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
-text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
+# # 2. Load the tokenizer and text encoder to tokenize and encode the text. 
+# tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+# text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
 
-# 3. The UNet model for generating the latents.
-unet = UNet2DConditionModel.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="unet")
 
-### Image processing
+
+# ### Image processing
 url = 'http://images.cocodataset.org/val2017/000000039769.jpg'
 image = Image.open(requests.get(url, stream=True).raw)
 
-## Prepare the image input to the Vit Feature Exctration
+# ## Prepare the image input to the Vit Feature Exctration
 inputs = processor(images=image, return_tensors="pt")
 outputs = model(**inputs)
-## Latent Space of the Image 
+# ## Latent Space of the Image 
 last_hidden_states = outputs.last_hidden_state
 
-### Diffusion Process
-from diffusers import LMSDiscreteScheduler
+# ### Diffusion Process
+# from diffusers import LMSDiscreteScheduler
 
-scheduler = LMSDiscreteScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", num_train_timesteps=1000)
+# scheduler = LMSDiscreteScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", num_train_timesteps=1000)
 
-### Move models to GPU
+# ### Move models to GPU
 torch_device = "cuda"
-vae.to(torch_device)
-text_encoder.to(torch_device)
+# vae.to(torch_device)
+# text_encoder.to(torch_device)
 model.to(torch_device)
+
+# 3. The UNet model for generating the latents.
+unet = UNet2DConditionModel.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="unet")
 unet.to(torch_device) 
