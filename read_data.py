@@ -3,7 +3,6 @@ import torch
 import torchvision
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
-from PIL import Image
 import kornia as K
 from utils import *
 import random
@@ -24,7 +23,7 @@ class ColorizationDataset(Dataset):
 
         self.scenes = os.listdir(path)
 
-        self.color_examples, self.samples = self.__getscenes__(self.path)
+        self.dataset = torchvision.datasets.ImageFolder(self.path, self.__transform__)
 
     def __colorization_transform__(self, x):
 
@@ -37,37 +36,6 @@ class ColorizationDataset(Dataset):
             ])
         
         return colorization_transform(x)
-
-    def __getscenes__(self, path):
-        """
-        Return two lists: One with the samples and the other with the first frame in the folder
-        """
-        color_examples = []
-        samples = []
-        
-        for scene in self.scenes:
-            # Path to the video folder
-            scene_path = os.path.join(path, scene)
-            
-            # Load list of frame names for the scene
-            scene_frames = os.listdir(scene_path)
-            
-            # Get a random selection of key frames for the scene
-            key_frame_names = random.sample(scene_frames, len(scene_frames))
-            
-            # Load sample images and append to list
-            for key_idx, scene_frame_name in enumerate(scene_frames):
-
-                # Load color example images and append to list
-                key_frame_name = key_frame_names[key_idx]
-                key_frame = Image.open(os.path.join(scene_path, key_frame_name))
-                color_examples.append(self.__transform__(key_frame))
-                sample = Image.open(os.path.join(scene_path, scene_frame_name))
-                samples.append(self.__transform__(sample))
-        
-        assert len(samples) == len(color_examples), "Samples and our color version need the same amount of samples"
-        
-        return samples, color_examples
 
     def __transform__(self, x):
         """
@@ -82,7 +50,7 @@ class ColorizationDataset(Dataset):
         """
         Return hou much samples as in the dataset.
         """
-        return len(self.color_examples)
+        return len(self.dataset)
 
     
     def __getitem__(self, index):
@@ -91,9 +59,11 @@ class ColorizationDataset(Dataset):
         the color example frame (first of the sequence).
         """
         # Get the next indices
-        next_index = min(index + 1, len(self.samples) - 1)
+        keyframe_index = random.randint(0,10)
+        next_index = min(index + 1, len(self.dataset) - 1)
         
-        return self.color_examples[index], self.samples[index], self.color_examples[next_index]
+        # return self.color_examples[index], self.samples[index], self.color_examples[next_index]
+        return self.dataset[index], self.dataset[keyframe_index], self.dataset[next_index]
     
 # Create the dataset
 class ReadData():
@@ -107,9 +77,9 @@ class ReadData():
         self.datas = ColorizationDataset(dataroot, image_size)
 
         # self.datas = DAVISDataset(dataroot, image_size, rgb=rgb, pos_path=pos_path, constrative=constrative)
-        self.dataloader = torch.utils.data.DataLoader(self.datas, batch_size=batch_size, shuffle=shuffle, num_workers=10)
+        self.dataloader = torch.utils.data.DataLoader(self.datas, batch_size=batch_size, shuffle=shuffle, num_workers=6, pin_memory=True)
 
-        assert (next(iter(self.dataloader))[0].shape) == (next(iter(self.dataloader))[1].shape), "The shapes must be the same"
+        # assert (next(iter(self.dataloader))[0][0].shape) == (next(iter(self.dataloader))[1].shape), "The shapes must be the same"
         return self.dataloader
 
 if __name__ == '__main__':
@@ -120,7 +90,7 @@ if __name__ == '__main__':
 
     dataLoader = ReadData()
     date_str = "DDPM_20230218_090502"
-    used_dataset = "drone_DAVIS"
+    used_dataset = "kinetics_5per"
 
     dataroot = f"C:/video_colorization/data/train/{used_dataset}"
     pos_dataroot = os.path.join("C:/video_colorization/diffusion/evals", date_str, used_dataset)

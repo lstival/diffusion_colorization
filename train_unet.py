@@ -1,7 +1,7 @@
 import torch
 import os
 from utils import *
-import DAVIS_dataset as ld
+import read_data as ld
 
 # Load the Network to increase the colorization
 import torch
@@ -91,26 +91,27 @@ def train():
             save_images(plot_img, os.path.join("unet_results", run_name, f"{epoch}.jpg"))
             torch.save(feature_model.state_dict(), os.path.join("unet_model", run_name, f"feature.pt"))
             torch.save(decoder.state_dict(), os.path.join("unet_model", run_name, f"decoder.pt"))
+            torch.save(optimizer.state_dict(), os.path.join("unet_model", run_name, f"optim.pt"))
 
 if __name__ == "__main__":
     model_name = get_model_time()
     run_name = f"UNET_k_{model_name}"
     epochs = 501
     
-    batch_size=64
-    image_size=128
-    in_ch=128
+    batch_size=256
+    image_size=64
+    in_ch=256
 
     device="cuda"
     lr=2e-3
     time_dim=1024
     # dataroot = r"C:\video_colorization\data\train\COCO_val2017"
     # dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
-    dataroot = r"C:\video_colorization\data\train\mini_kinetics"
-    # dataroot = r"C:\video_colorization\data\train\kinetics_5per"
+    # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
+    dataroot = r"C:\video_colorization\data\train\kinetics_5per"
     # dataroot = r"C:\video_colorization\data\train\rallye_DAVIS"
     
 
     # Train model
-    # train()
+    train()
     print("Done")

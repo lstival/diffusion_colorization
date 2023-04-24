@@ -50,10 +50,13 @@ def create_samples(data, device="cuda", pos_imgs=False, constrative=False):
     """
 
     # Test if the pos_color must be returned
-    try:
+    if len(data) == 4:
         img, img_color, next_frame, pos_color = data
-    except ValueError:
+    else:
         img, img_color, next_frame = data
+
+        if isinstance(img, list):
+            img, img_color, next_frame = img[0], img_color[0], next_frame[0]
 
     # img.to(device)
     # img_color.to(device)
