@@ -72,12 +72,12 @@ class ReadData():
     def __init__(self) -> None:
         super().__init__()
 
-    def create_dataLoader(self, dataroot, image_size, batch_size=16, shuffle=False):
+    def create_dataLoader(self, dataroot, image_size, batch_size=16, shuffle=False, pin_memory=True):
 
         self.datas = ColorizationDataset(dataroot, image_size)
 
         # self.datas = DAVISDataset(dataroot, image_size, rgb=rgb, pos_path=pos_path, constrative=constrative)
-        self.dataloader = torch.utils.data.DataLoader(self.datas, batch_size=batch_size, shuffle=shuffle, num_workers=6, pin_memory=True)
+        self.dataloader = torch.utils.data.DataLoader(self.datas, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory)
 
         # assert (next(iter(self.dataloader))[0][0].shape) == (next(iter(self.dataloader))[1].shape), "The shapes must be the same"
         return self.dataloader

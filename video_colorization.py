@@ -27,8 +27,8 @@ args.noise_steps = 1000
 args.rgb = True
 
 args.batch_size = 8
-args.image_size = 128
-args.in_ch=128
+args.image_size = 64
+args.in_ch=256
 
 # dataset = "mini_kinetics"
 dataset = "rallye_DAVIS"
@@ -58,7 +58,7 @@ except FileNotFoundError:
 # ================ Read Model =====================
 root_model_path = r"C:\video_colorization\diffusion\unet_model"
 # date_str = "UNET_20230404_120711"
-date_str = "UNET_k_20230420_102944"
+date_str = "UNET_k_20230423_140134"
 
 ### Encoder
 feature_model = Encoder(c_in=3, c_out=args.in_ch//2, return_subresults=True, img_size=args.image_size).to(device)
@@ -109,7 +109,7 @@ for video_name in pbar:
 
     # ================ Read images to make the video =====================
     dataLoader = ld.ReadData()
-    dataloader = dataLoader.create_dataLoader(path_temp_gray_frames, args.image_size, batch_size, rgb=args.rgb)
+    dataloader = dataLoader.create_dataLoader(path_temp_gray_frames, args.image_size, batch_size, pin_memory=False)
 
     # ============== Frame Production ===================
     imgs_2 = []
@@ -138,7 +138,7 @@ for video_name in pbar:
         pbar = tqdm(dataloader)
         for i, (data) in enumerate(pbar):
             # Set the imagens from dataloader
-            img, img_gray, img_color, next_frame = create_samples(data)            
+            img, img_gray, img_color, _ = create_samples(data)            
             #### Images
             ### Gray Image
             input_img = img_gray.to(device)

@@ -11,7 +11,6 @@ import torch.nn.functional as F
 from ViT import Vit_neck
 import torchvision.models as models
 from u_net import *
-from modules import Reverse_diffusion
 
 def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_diffusion=False, only_difussion=False):
 
@@ -67,14 +66,15 @@ def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_
         decoder.eval()
 
         ### Diffusion process
-        diffusion = Diffusion(img_size=16, device=device, noise_steps=noise_steps)
+        diffusion = Diffusion(img_size=image_size//8, device=device, noise_steps=noise_steps)
         # diffusion_model = Reverse_diffusion(c_in=in_ch//2, c_out=in_ch//2, time_dim=time_dim, img_size=8).to(device)
-        diffusion_model = UNet_conditional(c_in=in_ch//2, c_out=in_ch//2, time_dim=time_dim, img_size=16).to(device)
+        diffusion_model = UNet_conditional(c_in=in_ch//2, c_out=in_ch//2, time_dim=time_dim, img_size=image_size//8).to(device)
         diffusion_model.train()
 
     ### Labels generation
-    prompt = Vit_neck(batch_size=batch_size, image_size=image_size, out_chanels=time_dim)
-    prompt.train()
+    prompt = Vit_neck(batch_size=batch_size, image_size=image_size, out_chanels=time_dim).to(device)
+    prompt = load_trained_weights(prompt, vit_name, "vit_constrative", model_path="models_vit")
+    prompt.eval()
 
     ### Optimizers
     mse = nn.MSELoss()
@@ -82,7 +82,7 @@ def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_
     criterion = criterion.to(device)
 
     ### Diffusion train
-    params_list = list(diffusion_model.parameters()) + list(prompt.parameters()) 
+    params_list = diffusion_model.parameters()
     optimizer = optim.AdamW(params_list, lr=lr)
 
     logger = SummaryWriter(os.path.join("runs", run_name))
@@ -182,6 +182,7 @@ def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_
             optimizer.step()
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+            logger.add_scalar("epochs", epoch, global_step=epoch * l + i)
 
         if epoch % 10 == 0:
             l = 5
@@ -226,26 +227,29 @@ def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_
 
 if __name__ == "__main__":
     model_name = get_model_time()
-    run_name = f"UNET_k_{model_name}"
+    run_name = f"UNET_{model_name}"
     epochs = 501
     noise_steps = 1000
 
-    image_size=128
-    batch_size=64
+
     device="cuda"
     lr=2e-3
     time_dim=1024
     # dataroot = r"C:\video_colorization\data\train\COCO_val2017"
     # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
-    dataroot = r"C:\video_colorization\data\train\mini_kinetics"
+    dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
     # dataroot = r"C:\video_colorization\data\train\rallye_DAVIS"
-    in_ch=128
 
+    image_size=128
+    in_ch=256
+    batch_size=24
+
+    vit_name = "VIT_20230425_130530"
     # Train model
         # # # train_difussion("UNET_20230330_132559", vit_neck=True, test_diffusion=False, only_difussion=False)
     # train(vit_neck=False)
-    # train_difussion("UNET_k_20230418_233113", vit_neck=False, test_diffusion=False, only_difussion=True)
-    train_difussion("UNET_k_20230420_102944", vit_neck=False, test_diffusion=False, only_difussion=False)
+    # train_difussion("UNET_20230425_102212", vit_neck=False, test_diffusion=False, only_difussion=True)
+    train_difussion("UNET_20230425_152759", vit_neck=False, test_diffusion=False, only_difussion=False)
 
     # img = torch.ones((batch_size, 3, image_size, image_size)).to(device)
 

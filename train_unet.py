@@ -8,6 +8,34 @@ import torch
 import torch.nn as nn
 from u_net import *
 
+def valid_model(encoder, decoder, dataroot, criterion, epoch, logger, l, i):
+    ### Load dataset 
+    dataLoader = ld.ReadData()
+    dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=True)
+
+    encoder.eval()
+    decoder.eval()
+    with torch.no_grad():
+        data = next(iter(dataloader))
+        img, img_gray, _, _ = create_samples(data)
+
+        input_img = img_gray.to(device)
+        gt_img = img.to(device)
+
+        gt_out, skips = encoder(input_img)
+        dec_out = decoder((gt_out, skips))
+
+        # loss = criterion(tensor_2_img(dec_out, int_8=False), tensor_2_img(gt_img, int_8=False))
+
+        # logger.add_scalar("MSE Val", loss.item(), global_step=epoch * l + i)
+
+        plot_img = tensor_2_img(dec_out[:l])
+        plot_images(plot_img)
+
+    encoder.train()
+    decoder.train()
+
+
 def train():
     logger = SummaryWriter(os.path.join("runs", run_name))
     ### Load dataset 
@@ -87,6 +115,9 @@ def train():
 
             plot_img = tensor_2_img(x[:l])
             plot_images(plot_img)
+
+            ### Valid Model in other dataset
+            valid_model(feature_model, decoder, valid_dataroot, criterion, epoch, logger, l, i)
             
             save_images(plot_img, os.path.join("unet_results", run_name, f"{epoch}.jpg"))
             torch.save(feature_model.state_dict(), os.path.join("unet_model", run_name, f"feature.pt"))
@@ -95,11 +126,11 @@ def train():
 
 if __name__ == "__main__":
     model_name = get_model_time()
-    run_name = f"UNET_k_{model_name}"
-    epochs = 501
+    run_name = f"UNET_{model_name}"
+    epochs = 201
     
-    batch_size=256
-    image_size=64
+    batch_size=64
+    image_size=128
     in_ch=256
 
     device="cuda"
@@ -108,10 +139,12 @@ if __name__ == "__main__":
     # dataroot = r"C:\video_colorization\data\train\COCO_val2017"
     # dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
     # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
-    dataroot = r"C:\video_colorization\data\train\kinetics_5per"
     # dataroot = r"C:\video_colorization\data\train\rallye_DAVIS"
-    
 
+    # dataroot = r"C:\video_colorization\data\train\kinetics_5per"
+    dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
+    valid_dataroot = r"C:\video_colorization\data\train\mini_DAVIS_val"
+    
     # Train model
     train()
     print("Done")

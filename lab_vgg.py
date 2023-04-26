@@ -40,22 +40,24 @@ class VGG_19_YUV(nn.Module):
         x = self.vgg_features(x)
         return x
 
-transform=transforms.Compose([
-                K.color.rgb_to_yuv,
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ])
+# transform=transforms.Compose([
+#                 K.color.rgb_to_yuv,
+#                 transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+#             ])
 
 ### Training
-import DAVIS_dataset as ld
+import read_data as ld
 model = "VIT"
-image_size=64
-batch_size=8
+
 model_name = get_model_time()
 epochs = 201
 device = "cuda"
 lr = 2e-3
 run_name = f"{model}_{model_name}"
 out_size = 1024
+
+image_size=224
+batch_size=16
 
 # vgg_vanila = VGG_19(out_size=out_size, img_size=image_size).to(device)
 # vgg_vanila.eval()
@@ -65,14 +67,15 @@ if model == "VGG":
 else:
     vgg_yuv = Vit_neck(batch_size=batch_size, image_size=image_size, out_chanels=out_size).to(device)
 
+vgg_yuv.to(device)
 vgg_yuv.train()
 
 ##### Read Data
 dataLoader = ld.ReadData()
-used_dataset = "kinetics"
+used_dataset = "mini_DAVIS"
 dataroot = f"C:/video_colorization/data/train/{used_dataset}"
 # dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
-dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=False, rgb=True, constrative=True, DAVIS=True)
+dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=False)
 
 optimizer = optim.AdamW(vgg_yuv.parameters(), lr=lr)
 
@@ -91,33 +94,31 @@ metric = nn.MSELoss()
 logger = SummaryWriter(os.path.join("runs", run_name))
 l = len(dataloader)
 
-def tensor_2_rgb(x):
-    img_rgb = (x.clamp(-1, 1) + 1) / 2
-    img_rgb = tensor_lab_2_rgb(img_rgb).to(device)   
-    img_rgb = (img_rgb.type(torch.float) / 127.5) - 1.0
+# def tensor_2_rgb(x):
+#     img_rgb = (x.clamp(-1, 1) + 1) / 2
+#     img_rgb = tensor_lab_2_rgb(img_rgb).to(device)   
+#     img_rgb = (img_rgb.type(torch.float) / 127.5) - 1.0
 
-    return img_rgb
+#     return img_rgb
 
 setup_logging(run_name)
 
 def train():
     for epoch in range(epochs):
-        print(f"Starting epoch: {epoch}")
         pbar = tqdm(dataloader)
         for i, (data) in enumerate(pbar):
-            img, img_gray, img_color, next_frame, constrative = create_samples(data, constrative=True)
+            img, img_gray, img_color, _ = create_samples(data)
 
             # Set imgs to device
             img_yuv = img.to(device)
-            img_example = next_frame.to(device)
-            negative_img = constrative.to(device)
+            img_example = img_color.to(device)
 
-            y = torch.ones(img_yuv.shape[0]).to(device)
+            # y = torch.ones(img_yuv.shape[0]).to(device)
 
             # Create the vectos of inputs
             vgg_yuv.eval()
             anchor = vgg_yuv(img_example)
-            negative_class = vgg_yuv(negative_img)
+            # negative_class = vgg_yuv(negative_img)
 
             vgg_yuv.train()
             out_yuv = vgg_yuv(img_yuv)
@@ -139,11 +140,12 @@ def train():
 
             pbar.set_postfix(Los=loss.item())
             logger.add_scalar("Loss", loss.item(), global_step=epoch * l + i)
+            logger.add_scalar("epochs", epoch, global_step=epoch * l + i)
 
             if epoch % 20 == 0:
-                os.makedirs(os.path.join("models", run_name), exist_ok=True)
-                torch.save(vgg_yuv.state_dict(), os.path.join("models", run_name, f"ckpt.pt"))
-                torch.save(optimizer.state_dict(), os.path.join("models", run_name, f"optim.pt"))
+                os.makedirs(os.path.join("models_vit", run_name), exist_ok=True)
+                torch.save(vgg_yuv.state_dict(), os.path.join("models_vit", run_name, f"vit_constrative.pt"))
+                torch.save(optimizer.state_dict(), os.path.join("models_vit", run_name, f"vit_optim.pt"))
 
 
 if __name__ == "__main__":

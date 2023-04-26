@@ -3,11 +3,11 @@ import torch
 import torchvision
 from PIL import Image
 from matplotlib import pyplot as plt
-from torch.utils.data import DataLoader
+# from torch.utils.data import DataLoader
 from torchvision import transforms
 from datetime import datetime
 import kornia as K
-from ViT import Vit_neck
+# from ViT import Vit_neck
 
 def plot_images(images):
     plt.figure(figsize=(32, 32))
@@ -206,7 +206,7 @@ def delete_empty_folders(root_dir):
             except OSError:
                 pass
 
-def load_trained_weights(model, model_name, file_name):
+def load_trained_weights(model, model_name, file_name, model_path="unet_model"):
     """
     model: Instance of a model to get trained weights
     model_name: Name of trained model (name of the fold with the files)
@@ -216,7 +216,7 @@ def load_trained_weights(model, model_name, file_name):
     """
 
     #Path to load the saved weights 
-    path_weights = os.path.join("unet_model", model_name, f"{file_name}.pt")
+    path_weights = os.path.join(model_path, model_name, f"{file_name}.pt")
     # Load the weights
     model_wights = torch.load(path_weights)
     # Instance the weights loaded to the model recivied from parameter
