@@ -17,45 +17,78 @@ def train():
 
     # Read the data
     dataLoader = ld.ReadData()
-    dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=False)
+    dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=True, constrative=True)
+    val_dataloader = dataLoader.create_dataLoader(val_dataroot, image_size, batch_size, shuffle=True, constrative=True)
+
+    val_data = next(iter(val_dataloader))
+    val_img, _, val_img_color, val_next_frame, val_img_random = create_samples(val_data)
 
     # Define the optimizer and loss function
     optimizer = optim.AdamW(vit.parameters(), lr=lr)
     optimizer
 
-    metric = nn.MSELoss()
+    # metric = nn.MSELoss()
+    # metric = nn.TripletMarginLoss(margin=2.0, p=2)
+    metric = nn.CosineEmbeddingLoss(margin=1)
+    # metric = nn.CrossEntropyLoss()
     metric.to(device)
 
     # Log info
     logger = SummaryWriter(os.path.join("runs", run_name))
     l = len(dataloader)
+    vit.train()
 
     for epoch in range(epochs):
         pbar = tqdm(dataloader)
         for i, (data) in enumerate(pbar):
-            img, _, img_color, _ = create_samples(data)
+            img, _, img_color, _, img_random = create_samples(data)
+            # img, img_color, next_frame, img_random = data
 
             # Set imgs to device
-            img_yuv = img.to(device)
-            img_example = img_color.to(device)
+            anchor = img.to(device)
+            positive = img_color.to(device)
+            negative = img_random.to(device)
 
             # Create the vectos of inputs
+            positive_out = vit(positive)
+            negative_out = vit(negative)
+            anchor_out = vit(anchor)
+
+            labels = torch.ones(anchor_out.shape[0]).to(device)
+            # labels = img[1].to(device)
+
+            # loss = metric(out_vit, anchor)
+            # loss = metric(anchor_out, positive_out, negative_out)
+            pos_loss = metric(anchor_out, positive_out, labels)
+            neg_loss = metric(anchor_out, negative_out, labels*-1)
+            loss = pos_loss + neg_loss
+
             vit.eval()
-            anchor = vit(img_example)
+            with torch.no_grad():
+                anchor = val_img[0].to(device)
+                positive = val_img_color.to(device)
+                negative = val_img_random.to(device)
+
+                val_out = vit(val_img)
+                val_positive_out = vit(positive)
+                val_negative_out = vit(negative)
+
+                pos_loss = metric(val_out, val_positive_out, labels)
+                neg_loss = metric(val_out, val_negative_out, labels*-1)
+
+                val_loss = pos_loss + neg_loss
 
             vit.train()
-            out_vit = vit(img_yuv)
 
-            loss = metric(out_vit, anchor)
+            # loss = pos_loss + neg_loss
 
             # Step in the gradient
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            pbar.set_postfix(Los=loss.item())
+            pbar.set_postfix(Los=loss.item(), Val_loss=val_loss.item(), epochs=epoch)
             logger.add_scalar("Loss", loss.item(), global_step=epoch * l + i)
-            logger.add_scalar("epochs", epoch, global_step=epoch * l + i)
 
         if epoch % 10 == 0:
             os.makedirs(os.path.join("models_vit", run_name), exist_ok=True)
@@ -74,9 +107,15 @@ if __name__ == "__main__":
     lr = 2e-3
     out_size = 1024
     image_size=128
-    batch_size=350
+    batch_size=250
 
     used_dataset = "mini_kinetics"
     dataroot = f"C:/video_colorization/data/train/{used_dataset}"
+    val_dataroot = f"C:/video_colorization/data/train/mini_DAVIS"
+
+    dataLoader = ld.ReadData()
+    
 
     train()
+    # dataLoader = ld.ReadData()
+    # dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=False, constrative=True)
