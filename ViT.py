@@ -47,9 +47,12 @@ class Vit_neck(nn.Module):
             nn.GroupNorm(1, 124),
             nn.GELU(),
             nn.Conv2d(124, 62, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(1, 62)
+            nn.GroupNorm(1, 62),
         )
-        self.lin_out = nn.Linear(23808, out_chanels)
+        self.lin_out = nn.Sequential(
+            nn.Linear(23808, out_chanels),
+            nn.GELU(),
+        )
 
     def forward(self, x) -> torch.Tensor:
         preds = self.v(x).last_hidden_state
