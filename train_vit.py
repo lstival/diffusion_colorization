@@ -20,16 +20,13 @@ def train():
     dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=True, constrative=True)
     val_dataloader = dataLoader.create_dataLoader(val_dataroot, image_size, batch_size, shuffle=True, constrative=True)
 
-    val_data = next(iter(val_dataloader))
-    val_img, _, val_img_color, val_next_frame, val_img_random = create_samples(val_data)
-
     # Define the optimizer and loss function
     optimizer = optim.AdamW(vit.parameters(), lr=lr)
     optimizer
 
     # metric = nn.MSELoss()
-    # metric = nn.TripletMarginLoss(margin=2.0, p=2)
-    metric = nn.CosineEmbeddingLoss(margin=1)
+    metric = nn.TripletMarginLoss(margin=1.0, p=2)
+    # metric = nn.CosineEmbeddingLoss(margin=1)
     # metric = nn.CrossEntropyLoss()
     metric.to(device)
 
@@ -54,30 +51,34 @@ def train():
             negative_out = vit(negative)
             anchor_out = vit(anchor)
 
-            labels = torch.ones(anchor_out.shape[0]).to(device)
-            # labels = img[1].to(device)
+            # labels = torch.ones(anchor_out.shape[0]).to(device)
 
+            loss = metric(anchor_out, positive_out, negative_out)
             # loss = metric(out_vit, anchor)
             # loss = metric(anchor_out, positive_out, negative_out)
-            pos_loss = metric(anchor_out, positive_out, labels)
-            neg_loss = metric(anchor_out, negative_out, labels*-1)
-            loss = pos_loss + neg_loss
+            # pos_loss = metric(anchor_out, positive_out, labels)
+            # neg_loss = metric(anchor_out, negative_out, labels*-1)
+
+            # loss = metric(anchor_out, positive_out)
 
             vit.eval()
             with torch.no_grad():
-                anchor = val_img[0].to(device)
-                positive = val_img_color.to(device)
-                negative = val_img_random.to(device)
+                val_data = next(iter(val_dataloader))
+                val_img, _, val_img_color, val_next_frame, val_img_random = create_samples(val_data)
 
-                val_out = vit(val_img)
-                val_positive_out = vit(positive)
-                val_negative_out = vit(negative)
+                # Set imgs to device
+                val_anchor = val_img.to(device)
+                val_positive = val_img_color.to(device)
+                val_negative = val_img_random.to(device)
 
-                pos_loss = metric(val_out, val_positive_out, labels)
-                neg_loss = metric(val_out, val_negative_out, labels*-1)
+                # Create the vectos of inputs
+                val_positive_out = vit(val_positive)
+                val_negative_out = vit(val_negative)
+                val_anchor_out = vit(val_anchor)
 
-                val_loss = pos_loss + neg_loss
+                # labels = torch.ones(anchor_out.shape[0]).to(device)
 
+                val_loss = metric(val_anchor_out, val_positive_out, val_negative_out)
             vit.train()
 
             # loss = pos_loss + neg_loss
@@ -107,7 +108,7 @@ if __name__ == "__main__":
     lr = 2e-3
     out_size = 1024
     image_size=128
-    batch_size=250
+    batch_size=1000
 
     used_dataset = "mini_kinetics"
     dataroot = f"C:/video_colorization/data/train/{used_dataset}"
