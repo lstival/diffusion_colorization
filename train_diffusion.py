@@ -228,17 +228,17 @@ if __name__ == "__main__":
     lr=2e-4
     device="cuda"
     image_size=128
-    batch_size=100
-    in_ch=128
+    batch_size=32
+    in_ch=256
     
     # # dataroot = r"C:\video_colorization\data\train\COCO_val2017"
     # # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
     # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
     # # dataroot = r"C:\video_colorization\data\train\rallye_DAVIS"
 
-    vit_name = "VIT_20230425_130530"
-    pretained_name = "UNET_k_20230420_102944"
-    dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
+    vit_name = "VIT_20230426_222111"
+    pretained_name = "UNET_20230426_002220"
+    dataroot = r"C:\video_colorization\data\train\few_kinetics"
     epochs = 201
 
     training = TrainDiffusion(dataroot, image_size, time_dim)
