@@ -1,6 +1,10 @@
 import torch
 from torch import nn
-from torchvision.models import vit_b_16
+from torchvision.models import vit_b_32
+
+#Feature exctration from Vit Pytorch
+# https://discuss.pytorch.org/t/feature-extraction-in-torchvision-models-vit-b-16/148029/3
+
 
 class Vit_neck(nn.Module):
     def __init__(self, batch_size, image_size, out_chanels=256):
@@ -8,28 +12,39 @@ class Vit_neck(nn.Module):
 
         self.linear_size = (image_size//16 * image_size//16 * 768)
 
-        v = vit_b_16(weights="ViT_B_16_Weights.IMAGENET1K_V1").to("cuda")
-        self.v = torch.nn.Sequential(*(list(v.children())[:-2]))
-        for param in self.v.parameters():
-            param.requires_grad = False
+        self.v = vit_b_32(weights="ViT_B_32_Weights.IMAGENET1K_V1").to("cuda")
+        feature_exctration = torch.nn.Sequential(*(list(self.v.children())[:-1]))
+        self.encoder = feature_exctration[1]
+        # for param in self.v.parameters():
+        #     param.requires_grad = False
 
 
         self.lin_out = nn.Sequential(
-            nn.Linear(self.linear_size, out_chanels),
+            nn.Linear(self.linear_size, out_chanels*2),
             nn.GELU(),
+            nn.Linear(out_chanels*2, out_chanels),
         )
 
     def forward(self, x) -> torch.Tensor:
-        preds = self.v(x)
-        x = preds.view(preds.size(0), -1)
-        x = self.lin_out(x)
+        # Process image in input
+        x = self.v._process_input(x)
+        # Get the number of samples
+        n = x.shape[0]
+
+        # Expand the class token to the full batch
+        batch_class_token = self.v.class_token.expand(n, -1, -1)
+        x = torch.cat([batch_class_token, x], dim=1)
+        x = self.encoder(x)
+
+        # Get the features from image bx768
+        x = x[:, 0]
 
         return x
     
 if __name__ == '__main__':
-    model = vit_b_16(weights="ViT_B_16_Weights.IMAGENET1K_V1").to("cuda")
+    # model = vit_b_32(weights="ViT_B_32_Weights.IMAGENET1K_V1").to("cuda")
 
-    image_size = 128
+    image_size = 224
     batch_size = 16
     out_chanels = 1024
 
