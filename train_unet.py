@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from u_net import *
 
-def valid_model(encoder, decoder, dataroot, criterion, epoch, logger, l, i):
+def valid_model(encoder, decoder, dataroot, criterion, criterion_2, epoch, logger, l, i, creater_img=False):
     ### Load dataset 
     dataLoader = ld.ReadData()
     dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=True)
@@ -25,15 +25,18 @@ def valid_model(encoder, decoder, dataroot, criterion, epoch, logger, l, i):
         gt_out, skips = encoder(input_img)
         dec_out = decoder((gt_out, skips))
 
-        # loss = criterion(tensor_2_img(dec_out, int_8=False), tensor_2_img(gt_img, int_8=False))
+        val_loss = criterion_2(dec_out, gt_img)   
+        val_loss += criterion(tensor_2_img(dec_out, int_8=False), tensor_2_img(gt_img, int_8=False))
 
         # logger.add_scalar("MSE Val", loss.item(), global_step=epoch * l + i)
-
-        plot_img = tensor_2_img(dec_out[:l])
-        plot_images(plot_img)
-
     encoder.train()
     decoder.train()
+
+    if creater_img:
+        plot_img = tensor_2_img(dec_out[:l])
+        plot_images(plot_img)
+    else:
+        return val_loss
 
 
 def train():
@@ -43,10 +46,10 @@ def train():
     dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=True)
 
     ### Encoder and decoder models
-    feature_model = Encoder(c_in=3, c_out=in_ch//2, return_subresults=True, img_size=image_size).to(device)
+    feature_model = Encoder(c_in=3, c_out=out_ch//2, return_subresults=True, img_size=image_size).to(device)
     feature_model.train()
 
-    decoder = Decoder(c_in=in_ch, c_out=3, img_size=image_size).to(device)
+    decoder = Decoder(c_in=out_ch, c_out=3, img_size=image_size).to(device)
     decoder.train()
 
     params_list = list(decoder.parameters()) + list(feature_model.parameters())
@@ -91,11 +94,13 @@ def train():
             loss = criterion_2(x, gt_img)            
             loss += criterion(tensor_2_img(x, int_8=False), tensor_2_img(gt_img, int_8=False))
 
+            val_loss = valid_model(feature_model, decoder, valid_dataroot, criterion, criterion_2, epoch, logger, l, i, creater_img=False)
+
             # Gradient Steps
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            pbar.set_postfix(MSE=loss.item(), epochs=epoch)
+            pbar.set_postfix(MSE=loss.item(), Val_loss=val_loss.item(), epochs=epoch)
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
             logger.add_scalar("epochs", epoch, global_step=epoch * l + i)
 
@@ -117,7 +122,7 @@ def train():
             plot_images(plot_img)
 
             ### Valid Model in other dataset
-            valid_model(feature_model, decoder, valid_dataroot, criterion, epoch, logger, l, i)
+            valid_model(feature_model, decoder, valid_dataroot, criterion, criterion_2, epoch, logger, l, i, creater_img=True)
             
             save_images(plot_img, os.path.join("unet_results", run_name, f"{epoch}.jpg"))
             torch.save(feature_model.state_dict(), os.path.join("unet_model", run_name, f"feature.pt"))
@@ -129,9 +134,10 @@ if __name__ == "__main__":
     run_name = f"UNET_{model_name}"
     epochs = 201
     
-    batch_size=64
+    batch_size=16
     image_size=128
     in_ch=256
+    out_ch = 768
 
     device="cuda"
     lr=2e-3
