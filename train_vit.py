@@ -17,17 +17,18 @@ def train():
 
     # Read the data
     dataLoader = ld.ReadData()
-    dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=True, constrative=True)
-    val_dataloader = dataLoader.create_dataLoader(val_dataroot, image_size, batch_size, shuffle=True, constrative=True)
+    dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=False, constrative=True)
+    val_dataloader = dataLoader.create_dataLoader(val_dataroot, image_size, batch_size, shuffle=False, constrative=True)
 
     # Define the optimizer and loss function
     optimizer = optim.AdamW(vit.parameters(), lr=lr)
-    optimizer
 
     # metric = nn.MSELoss()
-    metric = nn.TripletMarginLoss(margin=1.0, p=2)
+    # metric = nn.TripletMarginLoss(margin=1.0, p=2)
     # metric = nn.CosineEmbeddingLoss(margin=1)
     # metric = nn.CrossEntropyLoss()
+    # metric = nn.TripletMarginWithDistanceLoss(distance_function=nn.CosineSimilarity(dim=1, eps=1e-6))
+    metric = (nn.TripletMarginWithDistanceLoss(distance_function=lambda x, y: 1.0 - nn.functional.cosine_similarity(x, y)))
     metric.to(device)
 
     # Log info
@@ -81,8 +82,6 @@ def train():
                 val_loss = metric(val_anchor_out, val_positive_out, val_negative_out)
             vit.train()
 
-            # loss = pos_loss + neg_loss
-
             # Step in the gradient
             optimizer.zero_grad()
             loss.backward()
@@ -104,15 +103,15 @@ if __name__ == "__main__":
     model_name = get_model_time()
     run_name = f"{model}_{model_name}"
 
-    epochs = 201
+    epochs = 501
     lr = 2e-3
-    out_size = 1024
+    out_size = 3072
     image_size=128
-    batch_size=1000
+    batch_size=500
 
-    used_dataset = "mini_kinetics"
+    used_dataset = "mini_DAVIS"
     dataroot = f"C:/video_colorization/data/train/{used_dataset}"
-    val_dataroot = f"C:/video_colorization/data/train/mini_DAVIS"
+    val_dataroot = f"C:/video_colorization/data/train/drone_DAVIS"
 
     dataLoader = ld.ReadData()
     

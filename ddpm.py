@@ -13,8 +13,7 @@ from tqdm import tqdm
 
 # file with read data from DAVIS dataset
 import read_data as ld
-# ColorAttention class to exctract color information
-from modules import EMA, ColorAttention, ImageFeatures, UNet_conditional
+from modules import EMA, ImageFeatures, UNet_conditional
 from utils import *
 from piq import SSIMLoss
 # from lab_vgg import *

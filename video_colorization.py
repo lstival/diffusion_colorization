@@ -22,18 +22,20 @@ model_name = get_model_time()
 parser = argparse.ArgumentParser()
 args, unknown = parser.parse_known_args()
 
-args.time_dim = 1024
-args.noise_steps = 1000
+args.time_dim = 768
+args.noise_steps = 250
 args.rgb = True
 
-args.batch_size = 8
-args.image_size = 64
+args.batch_size = 1
+args.image_size = 224
 args.in_ch=256
+args.out_ch = 256
 
 # dataset = "mini_kinetics"
-dataset = "rallye_DAVIS"
+dataset = "mini_DAVIS"
 batch_size = args.batch_size
 device = "cuda"
+date_str = "UNET_d_20230501_142027"
 
 # List all classes to be evaluated
 images_paths = f"C:/video_colorization/data/train/{dataset}"
@@ -58,10 +60,10 @@ except FileNotFoundError:
 # ================ Read Model =====================
 root_model_path = r"C:\video_colorization\diffusion\unet_model"
 # date_str = "UNET_20230404_120711"
-date_str = "UNET_k_20230423_140134"
+
 
 ### Encoder
-feature_model = Encoder(c_in=3, c_out=args.in_ch//2, return_subresults=True, img_size=args.image_size).to(device)
+feature_model = Encoder(c_in=3, c_out=args.out_ch//2, return_subresults=True, img_size=args.image_size).to(device)
 feature_model = load_trained_weights(feature_model, date_str, "feature")
 
 # ### Color Neck
@@ -71,18 +73,17 @@ feature_model = load_trained_weights(feature_model, date_str, "feature")
 
 ### Decoder
 # decoder = Decoder(c_in=args.in_ch, c_out=3, img_size=args.image_size).to(device)
-decoder = Decoder(c_in=args.in_ch, c_out=3, img_size=args.image_size).to(device)
+decoder = Decoder(c_in=args.out_ch, c_out=3, img_size=args.image_size).to(device)
 decoder = load_trained_weights(decoder, date_str, "decoder")
 
 ### Diffusion process
-# diffusion = Diffusion(img_size=8, device=device, noise_steps=args.noise_steps)
-
-# diffusion_model = UNet_conditional(c_in=args.in_ch, c_out=args.in_ch, time_dim=args.time_dim, img_size=8).to(device)
-# diffusion_model = load_trained_weights(diffusion_model, date_str, "ckpt")
+diffusion = Diffusion(img_size=args.image_size//8, device=device, noise_steps=args.noise_steps)
+diffusion_model = UNet_conditional(c_in=args.in_ch, c_out=args.out_ch//2, time_dim=args.time_dim, img_size=args.image_size//8).to(device)
+diffusion_model = load_trained_weights(diffusion_model, date_str, "ckpt")
 
 # ### Labels generation
-# prompt = Vit_neck(batch_size=batch_size, image_size=args.image_size, out_chanels=args.time_dim)
-# prompt = load_trained_weights(prompt, date_str, "prompt")
+prompt = Vit_neck().to(device)
+prompt = load_trained_weights(prompt, date_str, "prompt")
 
 # ================ Loop all videos inside gray folder =====================
 pbar = tqdm(list_gray_videos)
@@ -150,7 +151,7 @@ for video_name in pbar:
             l = gt_img.shape[0]
 
             ### Labels to create sample from noise
-            # labels = prompt(key_frame)
+            labels = prompt(key_frame)
 
             ### Encoder (create feature representation)
             gt_out, skips = feature_model(input_img)
@@ -162,11 +163,11 @@ for video_name in pbar:
             # neck_features = torch.cat((gt_out, color_feature.view(-1,args.in_ch//2,8,8)), axis=1)
 
             ### Diffusion (due the noise version of input and predict)
-            # x = diffusion.sample(diffusion_model, n=l, labels=labels, gray_img=img_gray, in_ch=args.in_ch, create_img=False)
+            x = diffusion.sample(diffusion_model, n=l, labels=labels, gray_img=img_gray, in_ch=args.out_ch//2, create_img=False)
 
             ### Decoder (create the expected sample using denoised feature space)
             # sampled_images = decoder((neck_features, skips))
-            sampled_images = decoder((gt_out, skips))
+            sampled_images = decoder((x, skips))
 
             for img_idx in range(len(sampled_images)):
                 if args.rgb:

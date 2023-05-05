@@ -7,23 +7,13 @@ from torchvision.models import vit_b_32
 
 
 class Vit_neck(nn.Module):
-    def __init__(self, batch_size, image_size, out_chanels=256):
+    def __init__(self):
         super(Vit_neck, self).__init__()
-
-        self.linear_size = (image_size//16 * image_size//16 * 768)
 
         self.v = vit_b_32(weights="ViT_B_32_Weights.IMAGENET1K_V1").to("cuda")
         feature_exctration = torch.nn.Sequential(*(list(self.v.children())[:-1]))
+        self.conv = feature_exctration[0]
         self.encoder = feature_exctration[1]
-        # for param in self.v.parameters():
-        #     param.requires_grad = False
-
-
-        self.lin_out = nn.Sequential(
-            nn.Linear(self.linear_size, out_chanels*2),
-            nn.GELU(),
-            nn.Linear(out_chanels*2, out_chanels),
-        )
 
     def forward(self, x) -> torch.Tensor:
         # Process image in input
@@ -38,6 +28,7 @@ class Vit_neck(nn.Module):
 
         # Get the features from image bx768
         x = x[:, 0]
+        # x = x[:, :10].view(n, -1)
 
         return x
     
@@ -46,10 +37,9 @@ if __name__ == '__main__':
 
     image_size = 224
     batch_size = 16
-    out_chanels = 1024
 
     img = torch.ones((batch_size,3,image_size,image_size)).to("cuda")
-    model = Vit_neck(batch_size, image_size, out_chanels).to("cuda")
+    model = Vit_neck().to("cuda")
     out = model(img)
     print(out.shape)
 

@@ -15,11 +15,12 @@ class ColorizationDataset(Dataset):
     the direclety next frames in the video sequence and example image with color.
     """
 
-    def __init__(self, path, image_size):
+    def __init__(self, path, image_size, constrative=False):
         super(Dataset, self).__init__()
 
         self.path = path
         self.image_size = image_size
+        self.constrative = constrative
 
         self.scenes = os.listdir(path)
 
@@ -62,8 +63,12 @@ class ColorizationDataset(Dataset):
         keyframe_index = random.randint(0,10)
         next_index = min(index + 1, len(self.dataset) - 1)
         
-        # return self.color_examples[index], self.samples[index], self.color_examples[next_index]
-        return self.dataset[index], self.dataset[keyframe_index], self.dataset[next_index]
+        if self.constrative:
+            random_idx = random.randint(20, 100)
+            random_idx = min(random_idx + 1, len(self.dataset) - 1)
+            return self.dataset[index], self.dataset[keyframe_index], self.dataset[next_index], self.dataset[random_idx] 
+        else:
+            return self.dataset[index], self.dataset[keyframe_index], self.dataset[next_index]
     
 # Create the dataset
 class ReadData():
@@ -72,9 +77,9 @@ class ReadData():
     def __init__(self) -> None:
         super().__init__()
 
-    def create_dataLoader(self, dataroot, image_size, batch_size=16, shuffle=False, pin_memory=True):
+    def create_dataLoader(self, dataroot, image_size, batch_size=16, shuffle=False, pin_memory=True, constrative=False):
 
-        self.datas = ColorizationDataset(dataroot, image_size)
+        self.datas = ColorizationDataset(dataroot, image_size, constrative=constrative)
 
         # self.datas = DAVISDataset(dataroot, image_size, rgb=rgb, pos_path=pos_path, constrative=constrative)
         self.dataloader = torch.utils.data.DataLoader(self.datas, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory)

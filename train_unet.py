@@ -134,21 +134,21 @@ if __name__ == "__main__":
     run_name = f"UNET_{model_name}"
     epochs = 201
     
-    batch_size=16
-    image_size=128
+    batch_size=8
+    image_size=224
     in_ch=256
-    out_ch = 768
+    out_ch = 256
 
     device="cuda"
     lr=2e-3
-    time_dim=1024
+    time_dim=768
     # dataroot = r"C:\video_colorization\data\train\COCO_val2017"
     # dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
     # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
     # dataroot = r"C:\video_colorization\data\train\rallye_DAVIS"
 
     # dataroot = r"C:\video_colorization\data\train\kinetics_5per"
-    dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
+    dataroot = r"C:\video_colorization\data\train\DAVIS"
     valid_dataroot = r"C:\video_colorization\data\train\mini_DAVIS_val"
     
     # Train model

@@ -32,43 +32,6 @@ class EMA:
     def reset_parameters(self, ema_model, model):
         ema_model.load_state_dict(model.state_dict())
 
-class ColorAttention(nn.Module):
-    def __init__(self, channels, size=64, in_ch=3):
-        super(ColorAttention, self).__init__()
-        self.channels = channels
-        self.size = size
-        self.dc = DoubleConv(in_ch, channels)
-        self.mha = nn.MultiheadAttention(channels, 2, batch_first=True)
-        self.ln = nn.LayerNorm([channels])
-        self.ff_self = nn.Sequential(
-            nn.LayerNorm([channels]),
-            nn.Linear(channels, channels),
-            nn.GELU(),
-            nn.Linear(channels, channels),
-        )
-        self.ln_out = nn.Sequential(
-            nn.LayerNorm([channels*size*size]),
-            nn.Linear(channels*size*size, channels*2),
-            nn.GELU(),
-            nn.Linear(channels*2, channels)
-        )
-
-    def forward(self, x):
-        # input shape [b, in_ch, size, size]
-        x = self.dc(x)
-        # x after simple conv. shape [b, 4096, 256]
-        x = x.view(-1, self.channels, self.size * self.size).swapaxes(1, 2)
-        x_ln = self.ln(x)
-        attention_value, _ = self.mha(x_ln, x_ln, x_ln)
-        attention_value = attention_value + x
-        attention_value = self.ff_self(attention_value) + attention_value
-        # attention_shape [b, 4096, 256] to [b, chanels*size*size]
-        attention_value = attention_value.reshape(attention_value.shape[0], -1)
-        out = self.ln_out(attention_value)
-        # out shape [b, chanels] this change is to concat with t in the diffusion
-        return out
-
-
 class SelfAttention(nn.Module):
     def __init__(self, channels, size):
         super(SelfAttention, self).__init__()
@@ -118,7 +81,7 @@ class DoubleConv(nn.Module):
 
 
 class Down(nn.Module):
-    def __init__(self, in_channels, out_channels, emb_dim=1024):
+    def __init__(self, in_channels, out_channels, emb_dim=7680):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool2d(2),
@@ -140,7 +103,7 @@ class Down(nn.Module):
         return x + emb
     
 class Up(nn.Module):
-    def __init__(self, in_channels, out_channels, emb_dim=1024):
+    def __init__(self, in_channels, out_channels, emb_dim=7680):
         super().__init__()
 
         self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
@@ -165,29 +128,29 @@ class Up(nn.Module):
         return x + emb
 
 class UNet_conditional(nn.Module):
-    def __init__(self, c_in=3, c_out=3, time_dim=256, device="cuda", max_ch_deep=512, img_size=8):
+    def __init__(self, c_in=3, c_out=384, time_dim=256, device="cuda", max_ch_deep=512, img_size=8, net_dimension=128):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
         
-        self.inc = DoubleConv(c_in, c_in*2)
-        self.down1 = Down(c_in*2, c_in*4)
-        self.sa1 = SelfAttention(c_in*4, img_size//2)
-        self.down2 = Down(c_in*4, c_in*8)
-        self.sa2 = SelfAttention(c_in*8, img_size//4)
-        self.down3 = Down(c_in*8, c_in*8)
-        self.sa3 = SelfAttention(c_in*8, img_size//8)
+        self.inc = DoubleConv(c_out, net_dimension*2)
+        self.down1 = Down(net_dimension*2, net_dimension*4)
+        self.sa1 = SelfAttention(net_dimension*4, img_size//2)
+        self.down2 = Down(net_dimension*4, net_dimension*8)
+        self.sa2 = SelfAttention(net_dimension*8, img_size//4)
+        # self.down3 = Down(c_in*8, c_in*8)
+        # self.sa3 = SelfAttention(c_in*8, img_size//8)
         
-        self.bot1 = DoubleConv(c_in*8, max_ch_deep)
-        self.bot2 = DoubleConv(max_ch_deep, c_in*8)
+        self.bot1 = DoubleConv(net_dimension*8, max_ch_deep)
+        self.bot2 = DoubleConv(max_ch_deep, net_dimension*4)
 
-        self.up1 = Up(c_in*16, c_in*4)
-        self.sa4 = SelfAttention(c_in*4, img_size//4)
-        self.up2 = Up(c_in*8, c_in*2)
-        self.sa5 = SelfAttention(c_in*2, img_size//2)
-        self.up3 = Up(c_in*4, c_in*2)
+        # self.up1 = Up(c_in*16, c_in*4)
+        # self.sa4 = SelfAttention(c_in*4, img_size//4)
+        self.up2 = Up(net_dimension*8, net_dimension*2)
+        self.sa5 = SelfAttention(net_dimension*2, img_size//2)
+        self.up3 = Up(net_dimension*4, net_dimension*2)
         self.outc = nn.Sequential(
-            nn.Conv2d(c_in*2, c_out, kernel_size=1)
+            nn.Conv2d(net_dimension*2, c_out, kernel_size=1)
         )
 
     def pos_encoding(self, t, channels):
@@ -211,15 +174,15 @@ class UNet_conditional(nn.Module):
         x2 = self.sa1(x2)
         x3 = self.down2(x2, t)
         x3 = self.sa2(x3)
-        x4 = self.down3(x3, t)
-        x4 = self.sa3(x4)   
+        # x4 = self.down3(x3, t)
+        # x4 = self.sa3(x4)   
 
-        x4 = self.bot1(x4)
+        x4 = self.bot1(x3)
         x4 = self.bot2(x4)
 
-        x = self.up1(x4, x3, t)
-        x = self.sa4(x)
-        x = self.up2(x, x2, t)
+        # x = self.up1(x4, x3, t)
+        # x = self.sa4(x)
+        x = self.up2(x4, x2, t)
         x = self.sa5(x)
         x = self.up3(x, x1, t)
         

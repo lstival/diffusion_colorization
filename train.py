@@ -180,11 +180,11 @@ def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            pbar.set_postfix(MSE=loss.item())
+            pbar.set_postfix(MSE=loss.item(), epoch=epoch)
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
             logger.add_scalar("epochs", epoch, global_step=epoch * l + i)
 
-        if epoch % 10 == 0:
+        if epoch % 1000 == 0 and epoch != 0:
             l = 5
             if len(labels) < l:
                 l = len(labels)
@@ -194,7 +194,7 @@ def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_
             if not test_diffusion and vit_neck:
                 x = diffusion.sample(diffusion_model, n=l, labels=labels[:l], in_ch=in_ch, create_img=False)
             elif only_difussion:
-                x = diffusion.sample(diffusion_model, n=l, labels=labels[:l], in_ch=in_ch, create_img=False)
+                x = diffusion.sample(diffusion_model, n=l, labels=labels[:l], in_ch=3, create_img=False)
             else:
                 x = diffusion.sample(diffusion_model, n=len(labels), labels=labels, in_ch=in_ch//2, create_img=False)
 
@@ -218,17 +218,17 @@ def train_difussion(pretained_name="UNET_20230323_163628", vit_neck=False ,test_
             plot_images(plot_img[:l])
             save_images(plot_img, os.path.join("unet_results", run_name, f"{epoch}.jpg"))
             # save the models
-            torch.save(diffusion_model.state_dict(), os.path.join("unet_model", run_name, f"ckpt.pt"))
-            torch.save(feature_model.state_dict(), os.path.join("unet_model", run_name, f"feature.pt"))
-            torch.save(decoder.state_dict(), os.path.join("unet_model", run_name, f"decoder.pt"))
-            torch.save(prompt.state_dict(), os.path.join("unet_model", run_name, f"prompt.pt"))
-            if vit_neck:
-                torch.save(color_neck.state_dict(), os.path.join("unet_model", run_name, f"vit_neck.pt"))
+            # torch.save(diffusion_model.state_dict(), os.path.join("unet_model", run_name, f"ckpt.pt"))
+            # torch.save(feature_model.state_dict(), os.path.join("unet_model", run_name, f"feature.pt"))
+            # torch.save(decoder.state_dict(), os.path.join("unet_model", run_name, f"decoder.pt"))
+            # torch.save(prompt.state_dict(), os.path.join("unet_model", run_name, f"prompt.pt"))
+            # if vit_neck:
+            #     torch.save(color_neck.state_dict(), os.path.join("unet_model", run_name, f"vit_neck.pt"))
 
 if __name__ == "__main__":
     model_name = get_model_time()
     run_name = f"UNET_{model_name}"
-    epochs = 501
+    epochs = 5001
     noise_steps = 1000
 
 
@@ -237,19 +237,21 @@ if __name__ == "__main__":
     time_dim=1024
     # dataroot = r"C:\video_colorization\data\train\COCO_val2017"
     # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
-    dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
+    # dataroot = r"C:\video_colorization\data\train\mini_DAVIS"
     # dataroot = r"C:\video_colorization\data\train\rallye_DAVIS"
+    dataroot = r"C:\video_colorization\data\train\few_kinetics"
 
     image_size=128
     in_ch=256
     batch_size=24
 
-    vit_name = "VIT_20230425_130530"
+    # vit_name = "VIT_20230425_130530"
+    vit_name = "VIT_20230426_222111"
     # Train model
         # # # train_difussion("UNET_20230330_132559", vit_neck=True, test_diffusion=False, only_difussion=False)
     # train(vit_neck=False)
     # train_difussion("UNET_20230425_102212", vit_neck=False, test_diffusion=False, only_difussion=True)
-    train_difussion("UNET_20230425_152759", vit_neck=False, test_diffusion=False, only_difussion=False)
+    train_difussion("UNET_20230425_152759", vit_neck=False, test_diffusion=False, only_difussion=True)
 
     # img = torch.ones((batch_size, 3, image_size, image_size)).to(device)
 

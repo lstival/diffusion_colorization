@@ -17,11 +17,32 @@ def plot_images(images):
     plt.show()
 
 
+def plot_images_2(pil_images):
+    num_images = len(pil_images)
+    fig, axes = plt.subplots(nrows=1, ncols=num_images, figsize=(num_images*4, 4))
+    for i, ax in enumerate(axes):
+        ax.imshow(pil_images[i])
+        ax.axis('off')
+    plt.show()
+
 def save_images(images, path, **kwargs):
     grid = torchvision.utils.make_grid(images, **kwargs)
     ndarr = grid.permute(1, 2, 0).to('cpu').numpy()
     im = Image.fromarray(ndarr)
     im.save(path)
+
+def save_images_2(images, folder_path):
+    widths, heights = zip(*(i.size for i in images))
+    total_width = sum(widths)
+    max_height = max(heights)
+    new_im = Image.new('RGB', (total_width, max_height))
+
+    x_offset = 0
+    for im in images:
+        new_im.paste(im, (x_offset, 0))
+        x_offset += im.size[0]
+
+    new_im.save(folder_path)
 
 
 # def get_data(args):
@@ -51,7 +72,9 @@ def create_samples(data, device="cuda", pos_imgs=False, constrative=False):
 
     # Test if the pos_color must be returned
     if len(data) == 4:
-        img, img_color, next_frame, pos_color = data
+        img, img_color, next_frame, random_frame = data
+        if isinstance(img, list):
+            img, img_color, next_frame, random_frame = img[0], img_color[0], next_frame[0], random_frame[0]
     else:
         img, img_color, next_frame = data
 
@@ -70,8 +93,8 @@ def create_samples(data, device="cuda", pos_imgs=False, constrative=False):
     next_frame = next_frame.to(device)
 
     if len(data) == 4:
-        pos_color = pos_color.to(device)
-        return img, img_gray, img_color, next_frame, pos_color
+        random_frame = random_frame.to(device)
+        return img, img_gray, img_color, next_frame, random_frame
     return img, img_gray, img_color, next_frame
 
 
