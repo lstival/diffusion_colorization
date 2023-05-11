@@ -20,15 +20,21 @@ def plot_images(images):
 def plot_images_2(pil_images):
     num_images = len(pil_images)
     fig, axes = plt.subplots(nrows=1, ncols=num_images, figsize=(num_images*4, 4))
-    for i, ax in enumerate(axes):
-        ax.imshow(pil_images[i])
-        ax.axis('off')
+    try:
+        for i, ax in enumerate(axes):
+            ax.imshow(pil_images[i])
+            ax.axis('off')
+    except:
+        axes.imshow(pil_images[0])
     plt.show()
 
 def save_images(images, path, **kwargs):
-    grid = torchvision.utils.make_grid(images, **kwargs)
-    ndarr = grid.permute(1, 2, 0).to('cpu').numpy()
-    im = Image.fromarray(ndarr)
+    try:
+        grid = torchvision.utils.make_grid(images, **kwargs)
+        ndarr = grid.permute(1, 2, 0).to('cpu').numpy()
+        im = Image.fromarray(ndarr)
+    except:
+        im = images
     im.save(path)
 
 def save_images_2(images, folder_path):
@@ -43,19 +49,6 @@ def save_images_2(images, folder_path):
         x_offset += im.size[0]
 
     new_im.save(folder_path)
-
-
-# def get_data(args):
-#     transforms = torchvision.transforms.Compose([
-#         torchvision.transforms.Resize(80),  # args.image_size + 1/4 *args.image_size
-#         torchvision.transforms.RandomResizedCrop(args.image_size, scale=(0.8, 1.0)),
-#         torchvision.transforms.ToTensor(),
-#         torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-#     ])
-#     dataset = torchvision.datasets.ImageFolder(args.dataset_path, transform=transforms)
-#     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-#     return dataloader
-
 
 def setup_logging(run_name):
     os.makedirs("models", exist_ok=True)

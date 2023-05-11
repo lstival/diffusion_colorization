@@ -81,7 +81,7 @@ class DoubleConv(nn.Module):
 
 
 class Down(nn.Module):
-    def __init__(self, in_channels, out_channels, emb_dim=7680):
+    def __init__(self, in_channels, out_channels, emb_dim=768):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool2d(2),
@@ -103,7 +103,7 @@ class Down(nn.Module):
         return x + emb
     
 class Up(nn.Module):
-    def __init__(self, in_channels, out_channels, emb_dim=7680):
+    def __init__(self, in_channels, out_channels, emb_dim=768):
         super().__init__()
 
         self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
@@ -128,24 +128,26 @@ class Up(nn.Module):
         return x + emb
 
 class UNet_conditional(nn.Module):
-    def __init__(self, c_in=3, c_out=384, time_dim=256, device="cuda", max_ch_deep=512, img_size=8, net_dimension=128):
+    def __init__(self, c_in=3, c_out=384, time_dim=256, device="cuda", max_ch_deep=512, img_size=8, net_dimension=256):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
         
-        self.inc = DoubleConv(c_out, net_dimension*2)
+        self.inc = DoubleConv(48+c_out, net_dimension*2)
         self.down1 = Down(net_dimension*2, net_dimension*4)
         self.sa1 = SelfAttention(net_dimension*4, img_size//2)
-        self.down2 = Down(net_dimension*4, net_dimension*8)
+        self.down2 = Down(192+net_dimension*4, net_dimension*8)
         self.sa2 = SelfAttention(net_dimension*8, img_size//4)
-        # self.down3 = Down(c_in*8, c_in*8)
-        # self.sa3 = SelfAttention(c_in*8, img_size//8)
+        self.down3 = Down(768+net_dimension*8, net_dimension*8)
+        self.sa3 = SelfAttention(net_dimension*8, img_size//8)
         
         self.bot1 = DoubleConv(net_dimension*8, max_ch_deep)
-        self.bot2 = DoubleConv(max_ch_deep, net_dimension*4)
+        # self.bot1 = DoubleConv(net_dimension*8, 1536)
+        # self.bot2 = DoubleConv(1536*2, net_dimension*4)
+        self.bot3 = DoubleConv(max_ch_deep, net_dimension*4)
 
-        # self.up1 = Up(c_in*16, c_in*4)
-        # self.sa4 = SelfAttention(c_in*4, img_size//4)
+        self.up1 = Up(net_dimension*8, net_dimension*4)
+        self.sa4 = SelfAttention(net_dimension*4, img_size//2)
         self.up2 = Up(net_dimension*8, net_dimension*2)
         self.sa5 = SelfAttention(net_dimension*2, img_size//2)
         self.up3 = Up(net_dimension*4, net_dimension*2)
@@ -166,22 +168,29 @@ class UNet_conditional(nn.Module):
     def forward(self, x, t, y):
         t = t.unsqueeze(-1).type(torch.float)
         t = self.pos_encoding(t, self.time_dim)
-        if y is not None:
-            t += y
+        # if y is not None:
+        #     t += y
 
-        x1 = self.inc(x)
+        #Make padding in order to concatenate color with original Img
+        # color = y.view(-1, 1536, 5, 5)
+        # color = torch.nn.functional.pad(color, (0, 2, 0, 2), "constant", 0)
+
+        x1 = self.inc(torch.cat((x, y[:, :-1].view(-1, 48, 28, 28)),1))
         x2 = self.down1(x1, t)
         x2 = self.sa1(x2)
-        x3 = self.down2(x2, t)
+        x3 = self.down2(torch.cat((x2, y[:, :-1].view(-1, 192, 14, 14)), 1), t)
         x3 = self.sa2(x3)
-        # x4 = self.down3(x3, t)
+        # x4 = self.down3(torch.cat((x3, y[:, :-1].view(-1, 768, 7, 7)), 1), t)
         # x4 = self.sa3(x4)   
 
         x4 = self.bot1(x3)
-        x4 = self.bot2(x4)
+        # x4 = self.bot2(torch.sum(torch.stack([color, x4]), dim=0))
+        # x4 = self.bot2(torch.cat((color, x4), 1))
+        x4 = self.bot3(x4)
+        # x4 = self.bot3(x4)
 
-        # x = self.up1(x4, x3, t)
-        # x = self.sa4(x)
+        x = self.up1(x4, x2, t)
+        x = self.sa4(x)
         x = self.up2(x4, x2, t)
         x = self.sa5(x)
         x = self.up3(x, x1, t)
@@ -190,51 +199,22 @@ class UNet_conditional(nn.Module):
         return output
 
 
-class ImageFeatures(nn.Module):
-    def __init__(self, inc_ch=1, out_size=256, img_size=128, svd_model_name="VGG_20230306_151307") -> None:
-        super().__init__()
-
-        # Model trained name
-        self.svd_model_name = svd_model_name
-
-        # Img size to define the dimension of last vector output
-        self.img_size = img_size
-
-        # Load the YUV pre trained model
-        self.out = self.__load_vgg_model__()
-
-    # def __load_vgg_model__(self):
-    #     """
-    #     Load the pretrained model (VGG in YUV color space), and
-    #     return the model.
-    #     """
-    #     saved_model = os.path.join("models", self.svd_model_name, f"ckpt.pt")
-    #     model_wights = torch.load(saved_model)
-    #     vgg_yuv = VGG_19_YUV(out_size=out_size, img_size=self.img_size).to(device)
-    #     vgg_yuv.load_state_dict(model_wights)
-    #     return vgg_yuv
-
-    # def forward(self, x):
-    #     out = self.out(x)
-    #     return out
-
-        
-
 if __name__ == '__main__':
     import argparse 
-    # from ddpm import *
+    from ddpm import Diffusion
     parser = argparse.ArgumentParser()
     args, unknown = parser.parse_known_args()
     args.batch_size = 4
     args.image_size = 8
     # net = UNet(device="cpu")
-    # net = UNet_conditional(c_in=2, c_out=2, time_dim=1024, device="cuda")
+    net = UNet_conditional(c_in=4, c_out=4, time_dim=768, device="cuda").to("cuda")
+    diffusion = Diffusion(img_size=28, device="cuda", noise_steps=500)
 
-    # diff_model = Reverse_diffusion(c_in=64, c_out=64, time_dim=1024, device="cuda").to("cuda")
-    # diffusion = Diffusion(img_size=args.image_size, device="cuda")
-    labels = torch.zeros((args.batch_size, 1024)).to("cuda")
+    t = diffusion.sample_timesteps(args.batch_size).to("cuda")
+    labels = torch.zeros((args.batch_size, 768)).to("cuda")
 
-    x = torch.ones((args.batch_size,64,8,8)).to("cuda")
+    x = torch.ones((args.batch_size,4,28,28)).to("cuda")
+    out = net(x, t, labels)
 
     # t = diffusion.sample_timesteps(x.shape[0]).to(device)
     # x_t, noise = diffusion.noise_images(x, t)
@@ -243,21 +223,3 @@ if __name__ == '__main__':
 
     # diffusion = Diffusion(img_size=args.image_size, device="cuda")
     # feature_model = ImageFeatures(out_size=1024).to("cuda")
-
-    # # ViT_model = Vit_neck(image_size=args.image_size, batch_size=args.batch_size).to("cuda")
-    # # print(sum([p.numel() for p in net.parameters()]))
-
-    # x = torch.randn(args.batch_size, 3,  args.image_size,  args.image_size).to("cuda")
-    # x_color = torch.randn(args.batch_size, 3,  args.image_size,  args.image_size).to("cuda")
-    
-    # labels = feature_model(x_color)
-
-    # t = x.new_tensor([500] * x.shape[0]).long().to("cuda")
-    # y = x.new_tensor([1] * x.shape[0]).long()
-    # print(net(x, t, y).shape)
-    
-    # out_color = ViT_model(x_color)
-    # net = net.to("cuda")
-
-    # color_model = ImageFeatures(out_size=512).to("cuda")
-    # print(color_model(x).shape)

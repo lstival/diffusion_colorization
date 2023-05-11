@@ -27,7 +27,7 @@ class Vit_neck(nn.Module):
         x = self.encoder(x)
 
         # Get the features from image bx768
-        x = x[:, 0]
+        # x = x[:, 0]
         # x = x[:, :10].view(n, -1)
 
         return x

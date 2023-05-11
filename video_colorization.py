@@ -14,6 +14,7 @@ from modules import *
 from ddpm import *
 from utils import *
 from u_net import *
+import VAE as vae
 
 import shutil
 # ================ Initial Infos =====================
@@ -23,19 +24,20 @@ parser = argparse.ArgumentParser()
 args, unknown = parser.parse_known_args()
 
 args.time_dim = 768
-args.noise_steps = 250
+args.noise_steps = 80
 args.rgb = True
 
 args.batch_size = 1
 args.image_size = 224
 args.in_ch=256
 args.out_ch = 256
+args.net_dimension=220
 
 # dataset = "mini_kinetics"
 dataset = "mini_DAVIS"
 batch_size = args.batch_size
 device = "cuda"
-date_str = "UNET_d_20230501_142027"
+date_str = "UNET_d_20230511_103417"
 
 # List all classes to be evaluated
 images_paths = f"C:/video_colorization/data/train/{dataset}"
@@ -63,8 +65,8 @@ root_model_path = r"C:\video_colorization\diffusion\unet_model"
 
 
 ### Encoder
-feature_model = Encoder(c_in=3, c_out=args.out_ch//2, return_subresults=True, img_size=args.image_size).to(device)
-feature_model = load_trained_weights(feature_model, date_str, "feature")
+# feature_model = Encoder(c_in=3, c_out=args.out_ch//2, return_subresults=True, img_size=args.image_size).to(device)
+# feature_model = load_trained_weights(feature_model, date_str, "feature")
 
 # ### Color Neck
 # color_neck = Vit_neck(batch_size=batch_size, image_size=image_size, out_chanels=int((args.in_ch//2)*8*8))
@@ -73,17 +75,18 @@ feature_model = load_trained_weights(feature_model, date_str, "feature")
 
 ### Decoder
 # decoder = Decoder(c_in=args.in_ch, c_out=3, img_size=args.image_size).to(device)
-decoder = Decoder(c_in=args.out_ch, c_out=3, img_size=args.image_size).to(device)
-decoder = load_trained_weights(decoder, date_str, "decoder")
+# decoder = Decoder(c_in=args.out_ch, c_out=3, img_size=args.image_size).to(device)
+# decoder = load_trained_weights(decoder, date_str, "decoder")
 
 ### Diffusion process
 diffusion = Diffusion(img_size=args.image_size//8, device=device, noise_steps=args.noise_steps)
-diffusion_model = UNet_conditional(c_in=args.in_ch, c_out=args.out_ch//2, time_dim=args.time_dim, img_size=args.image_size//8).to(device)
+diffusion_model = UNet_conditional(c_in=4, c_out=4, time_dim=args.time_dim, img_size=args.image_size//8,net_dimension=args.net_dimension).to(device)
 diffusion_model = load_trained_weights(diffusion_model, date_str, "ckpt")
+diffusion_model.eval()
 
 # ### Labels generation
-prompt = Vit_neck().to(device)
-prompt = load_trained_weights(prompt, date_str, "prompt")
+prompt = Vit_neck().to("cuda")
+prompt.eval()
 
 # ================ Loop all videos inside gray folder =====================
 pbar = tqdm(list_gray_videos)
@@ -131,47 +134,29 @@ for video_name in pbar:
 
     img_count = 0
     with torch.no_grad():
-        # diffusion_model.eval()
-        feature_model.eval()
-        decoder.eval()
-        # prompt.eval()
 
         pbar = tqdm(dataloader)
         for i, (data) in enumerate(pbar):
             # Set the imagens from dataloader
             img, img_gray, img_color, _ = create_samples(data)            
             #### Images
-            ### Gray Image
+
+            ## Gray Image
             input_img = img_gray.to(device)
-            ### Ground truth of the Gray Img
-            gt_img = img.to(device)
-            ### Get the video Key frame
-            key_frame = img_color.to(device)
+            l = input_img.shape[0]
 
-            l = gt_img.shape[0]
-
-            ### Labels to create sample from noise
-            labels = prompt(key_frame)
-
-            ### Encoder (create feature representation)
-            gt_out, skips = feature_model(input_img)
-
-            # ### Exctract color from key frame
-            # color_feature = color_neck(key_frame)
-
-            # ### Join the Color features with the Encoder out
-            # neck_features = torch.cat((gt_out, color_feature.view(-1,args.in_ch//2,8,8)), axis=1)
+            ## Labels to create sample from noise
+            labels = prompt(input_img)
 
             ### Diffusion (due the noise version of input and predict)
-            x = diffusion.sample(diffusion_model, n=l, labels=labels, gray_img=img_gray, in_ch=args.out_ch//2, create_img=False)
+            x = diffusion.sample(diffusion_model, labels=labels, n=l, in_ch=4, create_img=False).half()
 
-            ### Decoder (create the expected sample using denoised feature space)
-            # sampled_images = decoder((neck_features, skips))
-            sampled_images = decoder((x, skips))
+            ### Decoder the output of diffusion
+            sampled_images = vae.latents_to_pil(x)
 
             for img_idx in range(len(sampled_images)):
                 if args.rgb:
-                    save_images(tensor_2_img(sampled_images[img_idx].unsqueeze(0)), os.path.join(colored_frames_save,  f"{str(count_frame_idx).zfill(5)}.jpg"))
+                    save_images((sampled_images[img_idx]), os.path.join(colored_frames_save,  f"{str(count_frame_idx).zfill(5)}.jpg"))
                 else:
                     save_images(tensor_lab_2_rgb(sampled_images[img_idx].unsqueeze(0)), os.path.join(colored_frames_save,  f"{str(count_frame_idx).zfill(5)}.jpg"))
                 count_frame_idx+=1

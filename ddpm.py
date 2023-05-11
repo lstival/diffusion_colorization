@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 # file with read data from DAVIS dataset
 import read_data as ld
-from modules import EMA, ImageFeatures, UNet_conditional
+from modules import EMA, UNet_conditional
 from utils import *
 from piq import SSIMLoss
 # from lab_vgg import *
@@ -57,7 +57,7 @@ class Diffusion:
     def sample_timesteps(self, n):
         return torch.randint(low=1, high=self.noise_steps, size=(n,))
 
-    def sample(self, model, n, labels, gray_img=None, cfg_scale=3, in_ch=3, create_img=True):
+    def sample(self, model, n, labels, gray_img=None, cfg_scale=0, in_ch=3, create_img=True):
         # logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
