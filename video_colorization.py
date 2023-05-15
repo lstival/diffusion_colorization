@@ -37,7 +37,7 @@ args.net_dimension=220
 dataset = "mini_DAVIS"
 batch_size = args.batch_size
 device = "cuda"
-date_str = "UNET_d_20230511_103417"
+date_str = "UNET_d_20230512_005409"
 
 # List all classes to be evaluated
 images_paths = f"C:/video_colorization/data/train/{dataset}"

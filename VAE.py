@@ -40,11 +40,12 @@ def latents_to_pil(latents):
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    p = r"C:\video_colorization\data\train\mini_DAVIS_val\pigs\00077.jpg"
+    p = r"C:\video_colorization\data\train\mini_DAVIS\tennis\00058.jpg"
     img = load_image(p)
+    init_image = tfms.ToTensor()(img).unsqueeze(0) * 2.0 - 1.0  
 
-    latent_img = pil_to_latents(img)
+    latent_img = pil_to_latents(init_image)
 
     decoded_img = latents_to_pil(latent_img)
-
+    
     plt.imshow(decoded_img[0])

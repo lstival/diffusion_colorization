@@ -146,7 +146,7 @@ class PosProcessingDataset(Dataset):
         """
     
         transform=transforms.Compose([
-                        torchvision.transforms.Resize(80),  # args.image_size + 1/4 *args.image_size
+                        torchvision.transforms.Resize(160),  # args.image_size + 1/4 *args.image_size
                         torchvision.transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
                         transforms.Resize((self.image_size,self.image_size)),
                         transforms.ToTensor(),

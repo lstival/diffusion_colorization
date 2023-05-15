@@ -239,3 +239,9 @@ def load_trained_weights(model, model_name, file_name, model_path="unet_model"):
     model.load_state_dict(model_wights)
 
     return model
+
+def resume(model, filename):
+    model.load_state_dict(torch.load(filename))
+
+def checkpoint(model, filename):
+    torch.save(model.state_dict(), filename)

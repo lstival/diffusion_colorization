@@ -104,39 +104,38 @@ class Up(nn.Module):
         return x
 
 class UNet_pos_process(nn.Module):
-    def __init__(self, c_in=3, c_out=3, time_dim=256, device="cuda", max_ch_deep=512):
+    def __init__(self, c_in=3, c_out=3, time_dim=256, device="cuda", img_size=224, max_ch_deep=128, net_dim=64):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
         
-        self.inc = DoubleConv(c_in, 64)
-        self.down1 = Down(64, 128)
-        self.sa1 = SelfAttention(128, 32)
-        self.down2 = Down(128, 256)
-        self.sa2 = SelfAttention(256, 16)
-        self.down3 = Down(256, 256)
-        self.sa3 = SelfAttention(256, 8)
+        # self.inc = DoubleConv(c_in, 32)
+        self.down1 = Down(3, net_dim)
+        # self.sa1 = SelfAttention(net_dim, img_size//2)
+        self.down2 = Down(net_dim, net_dim*2)
+        self.sa2 = SelfAttention(net_dim*2, img_size//4)
+        self.down3 = Down(net_dim*2, net_dim*2)
+        self.sa3 = SelfAttention(net_dim*2, img_size//8)
         
-        self.bot1 = DoubleConv(256, max_ch_deep)
-        self.bot2 = DoubleConv(max_ch_deep, max_ch_deep)
-        self.bot3 = DoubleConv(max_ch_deep, 256)
+        self.bot1 = DoubleConv(net_dim*2, max_ch_deep)
+        self.bot2 = DoubleConv(max_ch_deep, net_dim*2)
 
-        self.up1 = Up(512, 128)
-        self.sa4 = SelfAttention(128, 16)
-        self.up2 = Up(256, 128)
-        self.sa5 = SelfAttention(128, 32)
-        self.up3 = Up(192, 128)
-        self.sa6 = SelfAttention(64, 16)
+        self.up1 = Up(net_dim*4, net_dim)
+        self.sa4 = SelfAttention(net_dim, img_size//4)
+        self.up2 = Up(net_dim*2, net_dim)
+        # self.sa5 = SelfAttention(net_dim, img_size//2)
+        self.up3 = Up(net_dim+3, net_dim//2)
         self.outc = nn.Sequential(
-            nn.Conv2d(128, c_out, kernel_size=1),
+            nn.Conv2d(net_dim//2, c_out, kernel_size=1),
             nn.Tanh()
         )
 
     def forward(self, x):
 
-        x1 = self.inc(x)
+        # x1 = self.inc(x)
+        x1 = x
         x2 = self.down1(x1)
-        x2 = self.sa1(x2)
+        # x2 = self.sa1(x2)
         x3 = self.down2(x2)
         x3 = self.sa2(x3)
         x4 = self.down3(x3)
@@ -144,12 +143,11 @@ class UNet_pos_process(nn.Module):
 
         x4 = self.bot1(x4)
         x4 = self.bot2(x4)
-        x4 = self.bot3(x4)
 
         x = self.up1(x4, x3)
         x = self.sa4(x)
         x = self.up2(x, x2)
-        x = self.sa5(x)
+        # x = self.sa5(x)
         x = self.up3(x, x1)
         
         output = self.outc(x)
@@ -166,23 +164,24 @@ from tqdm import tqdm
 model_name = get_model_time()
 parser = argparse.ArgumentParser()
 args, unknown = parser.parse_known_args()
-args.batch_size = 16
-args.image_size = 64
+args.batch_size = 7
+args.image_size = 224
 args.time_dim = 1024
 args.run_name = f"POS_{model_name}"
 args.lr = 1e-3
 args.epochs = 501
+args.net_dim = 220
 
 ### Dataset load
-root_model_path = r"C:\video_colorization\diffusion\models"
-date_str = "UNET_20230406_182152"
+root_model_path = r"C:\video_colorization\diffusion\unet_model"
+date_str = "UNET_d_20230512_005409"
 device = "cuda"
-used_dataset = "DAVIS_val"
+used_dataset = "mini_DAVIS"
 dataroot = f"C:/video_colorization/data/train/{used_dataset}"
 path_colorized_frames = f"C:/video_colorization/diffusion/temp_result/"
 
 pos_dataroot = os.path.join(path_colorized_frames, used_dataset, date_str)
-dataloader = dataLoader.create_dataLoader(dataroot, args.image_size, args.batch_size, shuffle=False, pos_path=pos_dataroot)
+dataloader = dataLoader.create_dataLoader(dataroot, args.image_size, args.batch_size, shuffle=True, pos_path=pos_dataroot)
 
 ### Creating the Folders
 pos_path_save = os.path.join("pos_results", args.run_name)
@@ -192,19 +191,22 @@ pos_path_save_models = os.path.join("pos_model", args.run_name)
 os.makedirs(pos_path_save_models, exist_ok=True)
 
 ### Model Params to train
-pos_process_model = UNet_pos_process().to(device)
+pos_process_model = UNet_pos_process(img_size=args.image_size, net_dim=args.net_dim).to(device)
 
 mse = nn.MSELoss()
 # SSIM = SSIMLoss(data_range=1.)
-criterion = SSIMLoss(data_range=-1.)
+# criterion = SSIMLoss(data_range=-1.)
+criterion = nn.MSELoss()
 optimizer = optim.AdamW(pos_process_model.parameters(), lr=args.lr)
 
 logger = SummaryWriter(os.path.join("runs", args.run_name))
 l = len(dataloader)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1)
 
 ### Train Loop
 for epoch in range(args.epochs):
     pbar = tqdm(dataloader)
+    lp=5
     for i, (data) in enumerate(pbar):
         img, img_gray, img_color, next_frame, pos_color = create_samples(data)
 
@@ -214,14 +216,16 @@ for epoch in range(args.epochs):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        pbar.set_postfix(MSE=loss.item())
+        pbar.set_postfix(MSE=loss.item(), epoch=epoch, lr=optimizer.param_groups[0]['lr'])
         logger.add_scalar("SSIM", loss.item(), global_step=epoch * l + i)
+
+    scheduler.step()
 
     if epoch % 10 == 0:
         img_out = tensor_2_img(out).to("cpu")
         
-        plot_images(tensor_2_img(img))
-        plot_images(img_out)
+        plot_images(tensor_2_img(img[:lp]))
+        plot_images(img_out[:lp])
 
         save_images(img_out, os.path.join(pos_path_save, f"{epoch}.jpg"))
 

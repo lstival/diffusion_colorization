@@ -1,9 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-# from ViT import Vit_neck
-# import torchvision.models as models
-# from lab_vgg import *
 
 class EMA:
     def __init__(self, beta):
@@ -21,7 +18,7 @@ class EMA:
             return new
         return old * self.beta + (1 - self.beta) * new
 
-    def step_ema(self, ema_model, model, step_start_ema=2000):
+    def step_ema(self, ema_model, model, step_start_ema=37632):
         if self.step < step_start_ema:
             self.reset_parameters(ema_model, model)
             self.step += 1
@@ -47,14 +44,11 @@ class SelfAttention(nn.Module):
         )
 
     def forward(self, x):
-        # print(f"SELF ATTENT x INPUT: {x.shape}")
         x = x.view(-1, self.channels, int(self.size) * int(self.size)).swapaxes(1, 2)
-        # print(f"SELF ATTENT x shape: {x.shape}")
         x_ln = self.ln(x)
         attention_value, _ = self.mha(x_ln, x_ln, x_ln)
         attention_value = attention_value + x
         attention_value = self.ff_self(attention_value) + attention_value
-        # print(f"ATTENTION_VALUE shape: {attention_value.shape}")
         return attention_value.swapaxes(2, 1).view(-1, self.channels, int(self.size), int(self.size))
 
 
@@ -81,7 +75,7 @@ class DoubleConv(nn.Module):
 
 
 class Down(nn.Module):
-    def __init__(self, in_channels, out_channels, emb_dim=768):
+    def __init__(self, in_channels, out_channels, emb_dim=1000):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool2d(2),
@@ -103,7 +97,7 @@ class Down(nn.Module):
         return x + emb
     
 class Up(nn.Module):
-    def __init__(self, in_channels, out_channels, emb_dim=768):
+    def __init__(self, in_channels, out_channels, emb_dim=1000):
         super().__init__()
 
         self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
@@ -146,11 +140,12 @@ class UNet_conditional(nn.Module):
         # self.bot2 = DoubleConv(1536*2, net_dimension*4)
         self.bot3 = DoubleConv(max_ch_deep, net_dimension*4)
 
-        self.up1 = Up(net_dimension*8, net_dimension*4)
-        self.sa4 = SelfAttention(net_dimension*4, img_size//2)
+        # self.up1 = Up(net_dimension*8, net_dimension*4)
+        # self.sa4 = SelfAttention(net_dimension*4, img_size//2)
         self.up2 = Up(net_dimension*8, net_dimension*2)
         self.sa5 = SelfAttention(net_dimension*2, img_size//2)
         self.up3 = Up(net_dimension*4, net_dimension*2)
+        self.sa6 = SelfAttention(net_dimension*2, img_size)
         self.outc = nn.Sequential(
             nn.Conv2d(net_dimension*2, c_out, kernel_size=1)
         )
@@ -169,7 +164,7 @@ class UNet_conditional(nn.Module):
         t = t.unsqueeze(-1).type(torch.float)
         t = self.pos_encoding(t, self.time_dim)
         # if y is not None:
-        #     t += y
+        #     t += torch.flatten(y[:,:25], start_dim=1)
 
         #Make padding in order to concatenate color with original Img
         # color = y.view(-1, 1536, 5, 5)
@@ -189,11 +184,12 @@ class UNet_conditional(nn.Module):
         x4 = self.bot3(x4)
         # x4 = self.bot3(x4)
 
-        x = self.up1(x4, x2, t)
-        x = self.sa4(x)
+        # x = self.up1(x4, x2, t)
+        # x = self.sa4(x)
         x = self.up2(x4, x2, t)
         x = self.sa5(x)
         x = self.up3(x, x1, t)
+        x = self.sa6(x)
         
         output = self.outc(x)
         return output
@@ -204,14 +200,14 @@ if __name__ == '__main__':
     from ddpm import Diffusion
     parser = argparse.ArgumentParser()
     args, unknown = parser.parse_known_args()
-    args.batch_size = 4
-    args.image_size = 8
+    args.batch_size = 10
+    args.image_size = 224
     # net = UNet(device="cpu")
-    net = UNet_conditional(c_in=4, c_out=4, time_dim=768, device="cuda").to("cuda")
-    diffusion = Diffusion(img_size=28, device="cuda", noise_steps=500)
+    net = UNet_conditional(c_in=4, c_out=4, time_dim=768, net_dimension=128, img_size=args.image_size//8, device="cuda").to("cuda")
+    diffusion = Diffusion(img_size=28, device="cuda", noise_steps=80)
 
     t = diffusion.sample_timesteps(args.batch_size).to("cuda")
-    labels = torch.zeros((args.batch_size, 768)).to("cuda")
+    labels = torch.zeros((args.batch_size, 50, 768)).to("cuda")
 
     x = torch.ones((args.batch_size,4,28,28)).to("cuda")
     out = net(x, t, labels)
