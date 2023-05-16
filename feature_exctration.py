@@ -14,7 +14,7 @@ this process was realized to save time during the diffusion training.
 """
 
 ### Parameters
-dataset = "DAVIS"
+dataset = "mini_kinetics"
 dataroot = f"C:/video_colorization/data/train/{dataset}"
 latensroot = f"data/latens/{dataset}/"
 image_size = 224

@@ -13,8 +13,8 @@ import read_data as ld
 from modules import *
 from ddpm import *
 from utils import *
-from u_net import *
 import VAE as vae
+from ViT import Vit_neck
 
 import shutil
 # ================ Initial Infos =====================
@@ -23,21 +23,22 @@ model_name = get_model_time()
 parser = argparse.ArgumentParser()
 args, unknown = parser.parse_known_args()
 
-args.time_dim = 768
-args.noise_steps = 80
+args.time_dim = 1000
+args.noise_steps = 100
 args.rgb = True
 
 args.batch_size = 1
 args.image_size = 224
 args.in_ch=256
 args.out_ch = 256
-args.net_dimension=220
+args.net_dimension=128
 
 # dataset = "mini_kinetics"
 dataset = "mini_DAVIS"
 batch_size = args.batch_size
 device = "cuda"
-date_str = "UNET_d_20230512_005409"
+date_str = "UNET_d_20230518_124920"
+best_model = True
 
 # List all classes to be evaluated
 images_paths = f"C:/video_colorization/data/train/{dataset}"
@@ -81,7 +82,11 @@ root_model_path = r"C:\video_colorization\diffusion\unet_model"
 ### Diffusion process
 diffusion = Diffusion(img_size=args.image_size//8, device=device, noise_steps=args.noise_steps)
 diffusion_model = UNet_conditional(c_in=4, c_out=4, time_dim=args.time_dim, img_size=args.image_size//8,net_dimension=args.net_dimension).to(device)
-diffusion_model = load_trained_weights(diffusion_model, date_str, "ckpt")
+if best_model:
+    diffusion_model = load_trained_weights(diffusion_model, date_str, "best_model")
+else:
+    diffusion_model = load_trained_weights(diffusion_model, date_str, "ckpt")
+
 diffusion_model.eval()
 
 # ### Labels generation

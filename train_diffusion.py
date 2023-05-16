@@ -8,6 +8,10 @@ from tqdm import tqdm
 import logging
 from torch import optim
 import VAE as vae
+import numpy as np 
+
+from torch.utils.data import DataLoader, SubsetRandomSampler
+from sklearn.model_selection import KFold
 
 # Load the Network to increase the colorization
 import torch
@@ -20,44 +24,14 @@ from ViT import Vit_neck
 def checkpoint(model, filename):
     torch.save(model.state_dict(), filename)
 
-def valid_model(diffusion, diffusion_model, prompt, dataroot, criterion):
-    ### Load dataset 
-    dataLoader = ld.ReadData()
-    dataloader = dataLoader.create_dataLoader(dataroot, image_size, batch_size, shuffle=False)
-
-    with torch.no_grad():
-        data = next(iter(dataloader))
-        img, img_gray, _, _ = create_samples(data)
-
-        gt_img = img.to(device)
-        input_img = img_gray.to(device)
-
-        ### Get the prompt
-        val_labels = prompt(gt_img)
-
-        ### Get the latents
-        latens = vae.pil_to_latents(input_img)
-
-        ### Get the noise
-        val_t = diffusion.sample_timesteps(latens.shape[0]).to(device)
-        val_x_t, val_noise = diffusion.noise_images(latens, val_t)
-
-        ### Predict the noise 
-        predicted_noise = diffusion_model(val_x_t, val_t, val_labels).half()
-
-        ### Meansure the difference between noise predicted and realnoise
-        with torch.autocast(device_type=device):
-            val_loss = criterion(predicted_noise, val_noise)
-
-    return val_loss, [val_labels]
-
 class TrainDiffusion():
-    def __init__(self, dataroot, image_size, time_dim) -> None:
+    def __init__(self, dataroot, valid_dataroot, image_size, time_dim) -> None:
 
         self.dataroot = dataroot
         self.image_size = image_size
         self.time_dim = time_dim
         self.run_name = get_model_time()
+        self.valid_dataroot = valid_dataroot
 
     def read_datalaoder(self):
         """
@@ -65,8 +39,18 @@ class TrainDiffusion():
         """
         ### Load dataset 
         dataLoader = ld.ReadLatent()
-        dataloader = dataLoader.create_dataLoader(self.dataroot, batch_size, shuffle=True)
+        dataloader = dataLoader.create_dataLoader(self.dataroot, batch_size, shuffle=True, valid_dataroot=self.valid_dataroot)
         return dataloader
+    
+    def read_dataset(self):
+        """
+        Get the data from the dataroot and return the dataset
+        """
+        ### Load dataset 
+        dataLoader = ld.ReadLatent()
+        dataset = dataLoader.create_dataset(self.dataroot)
+        val_dataset = dataLoader.create_dataset(self.valid_dataroot)
+        return dataset, val_dataset
 
     def load_losses(self, mse=True):
         if mse:
@@ -75,45 +59,40 @@ class TrainDiffusion():
         criterion = criterion.to(device)
         return criterion
     
-    def train(self, epochs, lr, pretained_name=None):
-        """
-        Method to train the reverse diffusion model and the prompt
-        """
-        criterion = self.load_losses()
-
-        logger = SummaryWriter(os.path.join("runs", self.run_name))
-
-        ## Load Dataset
-        dataloader = self.read_datalaoder()
-
-        # Load Vit prompt
-        prompt = Vit_neck().to("cuda")
-        prompt.eval()
-
-        ### Diffusion process
-        diffusion = Diffusion(img_size=image_size//8, device=device, noise_steps=noise_steps)
-        diffusion_model = UNet_conditional(c_in=4, c_out=4, time_dim=time_dim, img_size=image_size//8,net_dimension=net_dimension).to(device)
-        if pretained_name:
-            resume(diffusion_model, os.path.join("unet_model", pretained_name, "best_model.pth"))
+    def train_epoch(self, diffusion, diffusion_model, device, dataloader, criterion, optimizer, epoch):
         diffusion_model.train()
+        for latents, labels, _ in dataloader:
 
-        params_list = diffusion_model.parameters()
-        optimizer = optim.Adam(params_list, lr=lr)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
+            latents=latents.to(device)
+            labels=labels.to(device)
 
-        # Turn on benchmarking for free speed
-        torch.backends.cudnn.benchmark = True
-        ## Train Loop
+            l = latents.shape[0]
 
-        best_loss = 9999
+            ### Generate the noise using the ground truth image
+            t = diffusion.sample_timesteps(latents.shape[0]).to(device)
+            x_t, noise = diffusion.noise_images(latents, t)
 
-        for epoch in range(epochs):
-            logging.info(f"Starting epoch {epoch}:")
-            pbar = tqdm(dataloader)
-            for i, (data) in enumerate(pbar):
-                latents, labels, next_frame = data
+            ### Predict the noise 
+            predicted_noise = diffusion_model(x_t, t, labels).half()
 
-                ### Move the data to the device
+            ### Meansure the difference between noise predicted and realnoise
+            with torch.autocast(device_type=device):
+                loss = criterion(predicted_noise, noise)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            # train_pbar.update()
+
+        return loss, l, labels, latents
+    
+    def valid_epoch(self, diffusion, diffusion_model, device, dataloader, criterion, epoch):
+
+        diffusion_model.eval()
+        with torch.no_grad():
+            for latents, labels, _ in dataloader:
+
                 latents=latents.to(device)
                 labels=labels.to(device)
 
@@ -126,73 +105,145 @@ class TrainDiffusion():
                 ### Predict the noise 
                 predicted_noise = diffusion_model(x_t, t, labels).half()
 
-                ### Meansure the difference between noise predicted and realnoise
                 with torch.autocast(device_type=device):
-                    loss = criterion(predicted_noise, noise)
+                    val_loss = criterion(predicted_noise, noise)
 
-                # val_loss, val_data = valid_model(diffusion, diffusion_model, prompt, valid_dataroot, criterion)
+                # val_pbar.update()
 
-                ### Gradient Steps
-                optimizer.zero_grad()
-                # for param in diffusion_model.parameters():
-                    # param.grad = None
-                loss.backward()
-                optimizer.step()
+        return val_loss, l ,labels
+    
+    def train(self, epochs, lr, pretained_name=None):
+        """
+        Method to train the reverse diffusion model and the prompt
+        """
 
-                ### Update the progress bar
-                pbar.set_postfix(MSE=loss.item(), lr=optimizer.param_groups[0]['lr'], epochs=epoch)
-                logger.add_scalar("Loss", loss.item(), global_step=epoch * l + i)
+        ## Cross validation parameters
+        k=10
+        splits=KFold(n_splits=k,shuffle=True,random_state=42)
 
-            # scheduler.step()
-            if loss.item() < best_loss:
+        ## Load Dataset
+        # dataloader = self.read_datalaoder()
+        dataset, val_dataset = self.read_dataset()
 
-                ### Create the folder to save the model
-                pos_path_save_models = os.path.join("unet_model", run_name)
-                os.makedirs(pos_path_save_models, exist_ok=True)
+        # Load Vit prompt
+        prompt = Vit_neck().to("cuda")
+        prompt.eval()
 
-                best_loss = loss.item()
-                best_epoch = epoch
-                # checkpoint(diffusion_model, os.path.join("unet_model", run_name, "best_model.pth"))
+        ### Diffusion process
+        diffusion = Diffusion(img_size=image_size//8, device=device, noise_steps=noise_steps)
 
-            # elif epoch - best_epoch > early_stop_thresh:
-            #     print(f"Early stopping at epoch {epoch}")
-            #     break
+        # Turn on benchmarking for free speed
+        # torch.backends.cudnn.benchmark = True
+        best_loss = 999
+        diffusion_model = UNet_conditional(c_in=4, c_out=4, time_dim=time_dim, img_size=image_size//8,net_dimension=net_dimension).to(device)
 
-            # resume(diffusion_model, os.path.join("unet_model", run_name, "best_model.pth"))
+        for fold, (train_idx, val_idx) in enumerate(splits.split(np.arange(len(dataset)))):
+    
+            ## Read pretrained weights
+            if pretained_name:
+                # resume(diffusion_model, os.path.join("unet_model", pretained_name, "ckpt.pt"))
+                resume(diffusion_model, os.path.join("unet_model", pretained_name, "best_model.pt"))
 
-            if epoch % 10 == 0 and epoch != 0:
-                l = 5
-                if (latents.shape[0]) < l:
-                    l = (latents.shape[0])
+            params_list = diffusion_model.parameters()
+            optimizer = optim.Adam(params_list, lr=lr)
+            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=200, gamma=0.1)
 
-                x = diffusion.sample(diffusion_model, labels=labels[:l], n=l, in_ch=4, create_img=False).half()
-                plot_img = vae.latents_to_pil(x)
+            # print(f'Fold {fold + 1}')
+
+            train_sampler = SubsetRandomSampler(train_idx)
+            test_sampler = SubsetRandomSampler(val_idx)
+
+            ## Train dataloader
+            train_loader = DataLoader(dataset, batch_size=batch_size,  sampler=train_sampler)
+            # train_pbar = tqdm(train_loader, desc="Training", leave=False)
+
+            ## Validation dataloader
+            val_loader = DataLoader(dataset, batch_size=batch_size,sampler=test_sampler)
+            # val_pbar = tqdm(val_loader, desc="Validation", leave=False)
+
+            criterion = self.load_losses()
+
+            logger = SummaryWriter(os.path.join("runs", self.run_name))
+
+            ### Loop over the epochs
+            epoch_pbar = tqdm(range(epochs), desc="Epochs", leave=True)
+            for epoch in epoch_pbar:
+                logging.info(f"Starting epoch {epoch}:")
+
+                ## Pbar setings
+                #   
+                ## Train diffusion model
+                loss, l, labels, latents = self.train_epoch(diffusion, diffusion_model, device, train_loader, criterion, optimizer, epoch)
                 
-                ### Creating the Folders
-                pos_path_save = os.path.join("unet_results", run_name)
-                os.makedirs(pos_path_save, exist_ok=True)
+                ## Evaluate diffusion model
+                val_loss, val_l, val_labels = self.valid_epoch(diffusion, diffusion_model, device, val_loader, criterion, epoch)
 
-                ### Ploting and saving the images
-                plot_images_2(vae.latents_to_pil(latents[:l]))
-                plot_images_2(plot_img[:l])
+                ### Update the logger
+                logger.add_scalar("Loss", loss.item(), global_step=epoch * l)
 
-                ### Plot Validation
-                # x = diffusion.sample(diffusion_model, labels=val_data[0], n=val_data[0].shape[0], in_ch=4, create_img=False).half()
-                # val_plot_img = vae.latents_to_pil(x)
-                # plot_images_2(val_plot_img[:l])
+                epoch_pbar.set_postfix(MSE=loss.item(), MSE_val=val_loss.item(), lr=optimizer.param_groups[0]['lr'],  best_loss=best_loss)
+                # epoch_pbar.reset()
 
-                save_images_2(plot_img, os.path.join("unet_results", run_name, f"{epoch}.jpg"))
+                # scheduler.step()
 
-                # Save the models
-                # if loss.item() < best_loss:
-                torch.save(diffusion_model.state_dict(), os.path.join("unet_model", run_name, f"ckpt.pt"))
-                torch.save(optimizer.state_dict(), os.path.join("unet_model", run_name, f"optimizer.pt"))
+                test_loss = loss.item()
+                if test_loss < best_loss:
 
-        logger.close()
+                    ### Create the folder to save the model
+                    pos_path_save_models = os.path.join("unet_model", run_name)
+                    os.makedirs(pos_path_save_models, exist_ok=True)
+
+                    best_loss = loss.item()
+                    # best_epoch = epoch
+                    checkpoint(diffusion_model, os.path.join("unet_model", run_name, "best_model.pt"))
+                    torch.save(optimizer.state_dict(), os.path.join("unet_model", run_name, f"best_optimizer.pt"))
+
+                # elif epoch - best_epoch > early_stop_thresh:
+                #     print(f"Early stopping at epoch {epoch}")
+                #     break
+
+                # resume(diffusion_model, os.path.join("unet_model", run_name, "best_model.pt"))
+                # optimizer.load_state_dict(torch.load(os.path.join("unet_model", run_name, "best_optimizer.pt")))
+
+                if epoch % 10 == 0 and epoch != 0:
+                    l = 5
+                    if (labels.shape[0]) < l:
+                        l = (labels.shape[0])
+
+                    x = diffusion.sample(diffusion_model, labels=labels[:l], n=l, in_ch=4, create_img=False).half()
+                    plot_img = vae.latents_to_pil(x)
+                    
+                    ### Creating the Folders
+                    pos_path_save = os.path.join("unet_results", run_name)
+                    os.makedirs(pos_path_save, exist_ok=True)
+
+                    ### Ploting and saving the images
+                    plot_images_2(vae.latents_to_pil(latents[:l]))
+                    plot_images_2(plot_img[:l])
+
+                    ### Plot Validation
+                    x = diffusion.sample(diffusion_model, labels=val_labels[:l], n=l, in_ch=4, create_img=False).half()
+                    val_plot_img = vae.latents_to_pil(x)
+                    plot_images_2(val_plot_img[:l])
+
+                    save_images_2(plot_img, os.path.join("unet_results", run_name, f"{epoch}.jpg"))
+
+                    # Save the models
+                    # if loss.item() < best_loss:
+                    torch.save(diffusion_model.state_dict(), os.path.join("unet_model", run_name, f"ckpt.pt"))
+                    torch.save(optimizer.state_dict(), os.path.join("unet_model", run_name, f"optimizer.pt"))
+
+                    nome_arquivo = f"better_loss.txt"
+                    arquivo = open(os.path.join("unet_model", run_name, nome_arquivo), "w")
+                    arquivo.write(f"Epoch {epoch} - {best_loss}")
+                    arquivo.close()
+
+            torch.cuda.empty_cache()
+            logger.close()
 
 if __name__ == "__main__":
     ### Hyperparameters
-    seed = 2023
+    seed = 42
     torch.manual_seed(seed)
 
     model_name = get_model_time()
@@ -202,23 +253,25 @@ if __name__ == "__main__":
     lr=2e-5
     device="cuda"
     image_size=224
-    batch_size=40
-    early_stop_thresh = 50
+    net_dimension=128
     
+
     # # dataroot = r"C:\video_colorization\data\train\COCO_val2017"
     # # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
     # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
     # # dataroot = r"C:\video_colorization\data\train\rallye_DAVIS"
-
-    # vit_name = "VIT_20230429_131814"
-    pretained_name = "UNET_d_20230515_145243"
-    used_dataset = "DAVIS"
+    
+    pretained_name = "UNET_d_20230518_153443"
+    # pretained_name = None
+    used_dataset = "mini_kinetics"
     dataroot = f"C:/video_colorization/diffusion/data/latens/{used_dataset}/"
-    valid_dataroot = r"C:\video_colorization\data\train\mini_DAVIS_val"
-    epochs = 501
-    net_dimension=220
+    valid_dataroot = f"C:/video_colorization/diffusion/data/latens/mini_DAVIS/"
 
-    training = TrainDiffusion(dataroot, image_size, time_dim)
-    training.train(epochs, lr)
+    early_stop_thresh = 50
+    epochs = 201
+    batch_size=60
+
+    training = TrainDiffusion(dataroot, valid_dataroot, image_size, time_dim)
+    training.train(epochs, lr, pretained_name)
 
     print("Done")

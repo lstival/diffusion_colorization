@@ -2,7 +2,7 @@ import os
 import torch
 import torchvision
 from torchvision import transforms
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler, ConcatDataset
 import kornia as K
 from utils import *
 import random
@@ -132,43 +132,93 @@ class ReadLatent():
     def __init__(self) -> None:
         super().__init__()
 
-    def create_dataLoader(self, dataroot, batch_size, shuffle=False, pin_memory=True):
+    def create_dataLoader(self, dataroot, batch_size, shuffle=False, pin_memory=True, valid_dataroot=None):
 
-        self.datas = LatentsDataset(dataroot)
+        if valid_dataroot:
+
+            ## Crea the Datasets
+            self.train_datas = LatentsDataset(dataroot)
+            self.valid_datas = LatentsDataset(valid_dataroot)
+            
+            ## Concatenate the datasets
+            self.datas = ConcatDataset([self.train_datas, self.valid_datas])
+
+        else:
+            self.datas = LatentsDataset(dataroot)
 
         # self.datas = DAVISDataset(dataroot, image_size, rgb=rgb, pos_path=pos_path, constrative=constrative)
         self.dataloader = torch.utils.data.DataLoader(self.datas, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory)
 
         # assert (next(iter(self.dataloader))[0][0].shape) == (next(iter(self.dataloader))[1].shape), "The shapes must be the same"
         return self.dataloader
+    
+    def create_dataset(self, dataroot, valid_dataroot=None):
+
+        if valid_dataroot:
+
+            ## Crea the Datasets
+            self.train_datas = LatentsDataset(dataroot)
+            self.valid_datas = LatentsDataset(valid_dataroot)
+            
+            ## Concatenate the datasets
+            self.datas = ConcatDataset([self.train_datas, self.valid_datas])
+
+        else:
+            self.datas = LatentsDataset(dataroot)
+        
+        return self.datas
+
+    
 
 if __name__ == '__main__':
+
+    from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler, ConcatDataset
+    from sklearn.model_selection import KFold
+
     print("main")
 
-    image_size = 224
-    batch_size = 4
+    batch_size = 30
     used_dataset = "mini_DAVIS"
+
     dataroot = f"C:/video_colorization/diffusion/data/latens/{used_dataset}/"
+    valid_dataroot = f"C:/video_colorization/diffusion/data/latens/mini_DAVIS_val/"
 
     dataLoader = ReadLatent()
-    dataloader = dataLoader.create_dataLoader(dataroot, batch_size, shuffle=True)
+    dataloader = dataLoader.create_dataLoader(dataroot, batch_size, shuffle=True, validat_dataroot=valid_dataroot)
 
-    data = next(iter(dataloader))
+    ## Cross Validation
+    k=10
+    splits=KFold(n_splits=k,shuffle=True,random_state=42)
 
-    latent_gt, latent_gray, latent_next = data
+    for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(dataloader)))):
+        print('Fold {}'.format(fold + 1))
 
-    print(latent_gt.shape)
-    print(latent_gray.shape)
-    print(latent_next.shape)
+        train_sampler = SubsetRandomSampler(train_idx)
+        test_sampler = SubsetRandomSampler(val_idx)
+        train_loader = DataLoader(dataloader, batch_size=batch_size, sampler=train_sampler)
+        test_loader = DataLoader(dataloader, batch_size=batch_size, sampler=test_sampler)
 
-    import VAE as vae
-    import matplotlib.pyplot as plt
 
-    out_img = vae.latents_to_pil(latent_gt.to("cuda"))
-    next_out_img = vae.latents_to_pil(latent_next.to("cuda"))
 
-    plt.imshow(out_img[0])
-    plt.imshow(next_out_img[0])
+    # dataLoader = ReadLatent()
+    # dataloader = dataLoader.create_dataLoader(dataroot, batch_size, shuffle=True)
+
+    # data = next(iter(dataloader))
+
+    # latent_gt, latent_gray, latent_next = data
+
+    # print(latent_gt.shape)
+    # print(latent_gray.shape)
+    # print(latent_next.shape)
+
+    # import VAE as vae
+    # import matplotlib.pyplot as plt
+
+    # out_img = vae.latents_to_pil(latent_gt.to("cuda"))
+    # next_out_img = vae.latents_to_pil(latent_next.to("cuda"))
+
+    # plt.imshow(out_img[0])
+    # plt.imshow(next_out_img[0])
 
     # dataLoader = ReadData()
     # date_str = "DDPM_20230218_090502"

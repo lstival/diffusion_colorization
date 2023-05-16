@@ -11,3 +11,5 @@ temp_result/
 temp/
 videos_output/
 data/
+.vscode/
+metrics/

@@ -156,7 +156,7 @@ class UNet_pos_process(nn.Module):
 
 ##### Evaluate the model
 #load the dataloader
-import DAVIS_dataset as ld
+import old.DAVIS_dataset as ld
 dataLoader = ld.ReadData()
 import argparse
 from tqdm import tqdm

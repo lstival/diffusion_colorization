@@ -80,6 +80,7 @@ class Down(nn.Module):
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool2d(2),
             DoubleConv(in_channels, in_channels, residual=True),
+            nn.Dropout2d(p=0.3),
             DoubleConv(in_channels, out_channels),
         )
 
@@ -103,6 +104,7 @@ class Up(nn.Module):
         self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
         self.conv = nn.Sequential(
             DoubleConv(in_channels, in_channels, residual=True),
+            # nn.Dropout2d(p=0.1),
             DoubleConv(in_channels, out_channels, in_channels // 2),
         )
 
@@ -132,8 +134,8 @@ class UNet_conditional(nn.Module):
         self.sa1 = SelfAttention(net_dimension*4, img_size//2)
         self.down2 = Down(192+net_dimension*4, net_dimension*8)
         self.sa2 = SelfAttention(net_dimension*8, img_size//4)
-        self.down3 = Down(768+net_dimension*8, net_dimension*8)
-        self.sa3 = SelfAttention(net_dimension*8, img_size//8)
+        # self.down3 = Down(768+net_dimension*8, net_dimension*8)
+        # self.sa3 = SelfAttention(net_dimension*8, img_size//8)
         
         self.bot1 = DoubleConv(net_dimension*8, max_ch_deep)
         # self.bot1 = DoubleConv(net_dimension*8, 1536)
