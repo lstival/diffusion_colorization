@@ -190,16 +190,16 @@ def tensor_lab_2_rgb(x, int_8=True):
 
     return x
 
-def create_gray_videos(dataset, path_video_save):
+def create_gray_videos(dataset, path_video_save, data_mode="train"):
 
-    images_paths = f"C:/video_colorization/data/train/{dataset}"
+    images_paths = f"C:/video_colorization/data/{data_mode}/{dataset}"
     img_classes = os.listdir(images_paths)
 
     os.makedirs(path_video_save, exist_ok=True)
 
     for v_class in img_classes:
 
-        image_folder = f"C:/video_colorization/data/train/{dataset}/{v_class}"
+        image_folder = f"C:/video_colorization/data/{data_mode}/{dataset}/{v_class}"
         
         video_name = f'{path_video_save}{v_class}.mp4'
 

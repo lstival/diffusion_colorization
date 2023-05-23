@@ -34,14 +34,16 @@ args.out_ch = 256
 args.net_dimension=128
 
 # dataset = "mini_kinetics"
-dataset = "mini_DAVIS"
+dataset = "DAVIS_test"
+data_mode = "test"
+
 batch_size = args.batch_size
 device = "cuda"
-date_str = "UNET_d_20230518_124920"
+date_str = "UNET_d_20230520_123952"
 best_model = True
 
 # List all classes to be evaluated
-images_paths = f"C:/video_colorization/data/train/{dataset}"
+images_paths = f"C:/video_colorization/data/{data_mode}/{dataset}"
 img_classes = os.listdir(images_paths)
 
 # ================ Read Video =====================
@@ -56,7 +58,7 @@ try:
     list_gray_videos = os.listdir(path_gray_video)
 except FileNotFoundError:
     # Create the gray version of the videos
-    create_gray_videos(dataset, path_gray_video)
+    create_gray_videos(dataset, path_gray_video, data_mode)
     list_gray_videos = os.listdir(path_gray_video)
 
 

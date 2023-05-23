@@ -205,7 +205,7 @@ class TrainDiffusion():
                 # resume(diffusion_model, os.path.join("unet_model", run_name, "best_model.pt"))
                 # optimizer.load_state_dict(torch.load(os.path.join("unet_model", run_name, "best_optimizer.pt")))
 
-                if epoch % 10 == 0 and epoch != 0:
+                if epoch % 10 == 0:
                     l = 5
                     if (labels.shape[0]) < l:
                         l = (labels.shape[0])
@@ -218,13 +218,16 @@ class TrainDiffusion():
                     os.makedirs(pos_path_save, exist_ok=True)
 
                     ### Ploting and saving the images
-                    plot_images_2(vae.latents_to_pil(latents[:l]))
-                    plot_images_2(plot_img[:l])
+                    # plot_images_2(vae.latents_to_pil(latents[:l]))
+                    # plot_images_2(plot_img[:l])
+
+                    if val_l > 5:
+                        val_l = 5
 
                     ### Plot Validation
-                    x = diffusion.sample(diffusion_model, labels=val_labels[:l], n=l, in_ch=4, create_img=False).half()
+                    x = diffusion.sample(diffusion_model, labels=val_labels[:val_l], n=val_l, in_ch=4, create_img=False).half()
                     val_plot_img = vae.latents_to_pil(x)
-                    plot_images_2(val_plot_img[:l])
+                    # plot_images_2(val_plot_img[:val_l])
 
                     save_images_2(plot_img, os.path.join("unet_results", run_name, f"{epoch}.jpg"))
 
@@ -248,7 +251,7 @@ if __name__ == "__main__":
 
     model_name = get_model_time()
     run_name = f"UNET_d_{model_name}"
-    noise_steps = 100
+    noise_steps = 80
     time_dim=1000
     lr=2e-5
     device="cuda"
@@ -261,15 +264,15 @@ if __name__ == "__main__":
     # dataroot = r"C:\video_colorization\data\train\mini_kinetics"
     # # dataroot = r"C:\video_colorization\data\train\rallye_DAVIS"
     
-    pretained_name = "UNET_d_20230518_153443"
+    pretained_name = "UNET_d_20230522_121305"
     # pretained_name = None
-    used_dataset = "mini_kinetics"
+    used_dataset = "DAVIS"
     dataroot = f"C:/video_colorization/diffusion/data/latens/{used_dataset}/"
-    valid_dataroot = f"C:/video_colorization/diffusion/data/latens/mini_DAVIS/"
+    valid_dataroot = f"C:/video_colorization/diffusion/data/latens/DAVIS_val/"
 
     early_stop_thresh = 50
     epochs = 201
-    batch_size=60
+    batch_size=100
 
     training = TrainDiffusion(dataroot, valid_dataroot, image_size, time_dim)
     training.train(epochs, lr, pretained_name)
