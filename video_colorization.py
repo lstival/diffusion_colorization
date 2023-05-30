@@ -27,20 +27,20 @@ args.time_dim = 1000
 args.noise_steps = 100
 args.rgb = True
 
-args.batch_size = 1
+args.batch_size = 50
 args.image_size = 224
 args.in_ch=256
 args.out_ch = 256
 args.net_dimension=128
 
 # dataset = "mini_kinetics"
-dataset = "DAVIS_test"
-data_mode = "test"
+dataset = "mini_DAVIS"
+data_mode = "train"
 
 batch_size = args.batch_size
 device = "cuda"
-date_str = "UNET_d_20230520_123952"
-best_model = True
+date_str = "UNET_d_20230526_150739"
+best_model = False
 
 # List all classes to be evaluated
 images_paths = f"C:/video_colorization/data/{data_mode}/{dataset}"
@@ -87,7 +87,7 @@ diffusion_model = UNet_conditional(c_in=4, c_out=4, time_dim=args.time_dim, img_
 if best_model:
     diffusion_model = load_trained_weights(diffusion_model, date_str, "best_model")
 else:
-    diffusion_model = load_trained_weights(diffusion_model, date_str, "ckpt")
+    diffusion_model = load_trained_weights(diffusion_model, date_str, "ema_ckpt")
 
 diffusion_model.eval()
 
@@ -142,8 +142,8 @@ for video_name in pbar:
     img_count = 0
     with torch.no_grad():
 
-        pbar = tqdm(dataloader)
-        for i, (data) in enumerate(pbar):
+        # pbar = tqdm(dataloader)
+        for i, (data) in enumerate(dataloader):
             # Set the imagens from dataloader
             img, img_gray, img_color, _ = create_samples(data)            
             #### Images
@@ -167,6 +167,8 @@ for video_name in pbar:
                 else:
                     save_images(tensor_lab_2_rgb(sampled_images[img_idx].unsqueeze(0)), os.path.join(colored_frames_save,  f"{str(count_frame_idx).zfill(5)}.jpg"))
                 count_frame_idx+=1
+            
+            torch.cuda.empty_cache()
 
     frame_2_video(colored_frames_save, f"{colored_video_path}/{video_name}_colored.mp4", img_start_name=None)
 

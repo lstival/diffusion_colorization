@@ -245,3 +245,32 @@ def resume(model, filename):
 
 def checkpoint(model, filename):
     torch.save(model.state_dict(), filename)
+
+def weights_regularization(model, loss):
+    """"
+    Recives a model and loss of the acutal training epoch, and
+    calculate de l1_penalty to avoid overfit.
+    """
+
+    l1_penalty = torch.nn.L1Loss(size_average=False)
+    reg_loss = 0
+
+    for param in model.parameters():
+        reg_loss += l1_penalty(param)
+
+    factor = 0.001 #lambda
+    loss += factor * reg_loss
+
+    return loss
+
+def is_notebook():
+    try:
+        shell = get_ipython().__class__.__name__
+        if shell == 'ZMQInteractiveShell':
+            return True   # Jupyter notebook or qtconsole
+        elif shell == 'TerminalInteractiveShell':
+            return False  # Terminal running IPython
+        else:
+            return False  # Other type (?)
+    except NameError:
+        return False      # Probably standard Python interpreter

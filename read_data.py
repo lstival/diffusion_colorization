@@ -16,12 +16,13 @@ class ColorizationDataset(Dataset):
     the direclety next frames in the video sequence and example image with color.
     """
 
-    def __init__(self, path, image_size, constrative=False):
+    def __init__(self, path, image_size, constrative=False, train=None):
         super(Dataset, self).__init__()
 
         self.path = path
         self.image_size = image_size
         self.constrative = constrative
+        self.train = train
 
         self.scenes = os.listdir(path)
 
@@ -29,13 +30,21 @@ class ColorizationDataset(Dataset):
 
     def __colorization_transform__(self, x):
 
-        colorization_transform=transforms.Compose([
-                torchvision.transforms.Resize(280),  # args.image_size + 1/4 *args.image_size
-                torchvision.transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
-                transforms.Resize((self.image_size,self.image_size)),
+        if self.train:
+            colorization_transform=transforms.Compose([
+                    torchvision.transforms.Resize(280),  # args.image_size + 1/4 *args.image_size
+                    torchvision.transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
+                    torchvision.transforms.RandomRotation((0, 365)),
+                    transforms.Resize((self.image_size,self.image_size)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+                ])
+        else:
+            colorization_transform=transforms.Compose([
+                transforms.Resize((self.image_size, self.image_size)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ])
+                ])
         
         return colorization_transform(x)
 
@@ -81,12 +90,12 @@ class LatentsDataset(Dataset):
     the exctration of VAC pre trained.
     """
 
-    def __init__(self, path):
+    def __init__(self, path, file_name="latent.npz"):
         super(Dataset, self).__init__()
 
         self.path = path
 
-        self.dataset = np.load(path+"latent.npz", 'r')
+        self.dataset = np.load(path+file_name,'r')
         ## Latents of the images
         self.latents = self.dataset['latents']
         ## Labels of the images (img_gray)
@@ -116,9 +125,9 @@ class ReadData():
     def __init__(self) -> None:
         super().__init__()
 
-    def create_dataLoader(self, dataroot, image_size, batch_size=16, shuffle=False, pin_memory=True, constrative=False):
+    def create_dataLoader(self, dataroot, image_size, batch_size=16, shuffle=False, pin_memory=True, constrative=False , train=None):
 
-        self.datas = ColorizationDataset(dataroot, image_size, constrative=constrative)
+        self.datas = ColorizationDataset(dataroot, image_size, constrative=constrative, train=train)
 
         # self.datas = DAVISDataset(dataroot, image_size, rgb=rgb, pos_path=pos_path, constrative=constrative)
         self.dataloader = torch.utils.data.DataLoader(self.datas, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory)
@@ -129,22 +138,23 @@ class ReadData():
 class ReadLatent():
 
     # Initilize the class
-    def __init__(self) -> None:
+    def __init__(self,  file_name="latent.npz") -> None:
         super().__init__()
+        self. file_name=file_name
 
     def create_dataLoader(self, dataroot, batch_size, shuffle=False, pin_memory=True, valid_dataroot=None):
 
         if valid_dataroot:
 
             ## Crea the Datasets
-            self.train_datas = LatentsDataset(dataroot)
-            self.valid_datas = LatentsDataset(valid_dataroot)
+            self.train_datas = LatentsDataset(dataroot, self.file_name)
+            self.valid_datas = LatentsDataset(valid_dataroot, self.file_name)
             
             ## Concatenate the datasets
             self.datas = ConcatDataset([self.train_datas, self.valid_datas])
 
         else:
-            self.datas = LatentsDataset(dataroot)
+            self.datas = LatentsDataset(dataroot, self.file_name)
 
         # self.datas = DAVISDataset(dataroot, image_size, rgb=rgb, pos_path=pos_path, constrative=constrative)
         self.dataloader = torch.utils.data.DataLoader(self.datas, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory)
