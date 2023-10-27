@@ -14,7 +14,7 @@ this process was realized to save time during the diffusion training.
 """
 
 ### Parameters
-dataset = "coco"
+dataset = "LDV"
 dataype = "train"
 # dataroot = f"C:/video_colorization/data/train/{dataset}"
 dataroot = f"C:/video_colorization/data/{dataype}/{dataset}"

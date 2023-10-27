@@ -20,11 +20,11 @@ def Average(lst):
 image_size = 224
 time_dim = 1000
 device = "cuda"
-data_mode = "train"
+data_mode = "test"
 
 ##### Read Data
-used_dataset = "mini_DAVIS"
-date_str = "UNET_d_20230526_150739"
+used_dataset = "DAVIS"
+date_str = "UNET_d_20230601_215356"
 
 # list_date_str = os.listdir(r"C:\video_colorization\vit_colorization\temp_result\DAVIS")
 list_date_str = [date_str]
@@ -36,8 +36,8 @@ for date_str in list_date_str:
     # gt_dataloader = dataLoader.create_dataLoader(gt_dataroot, batch_size, shuffle=False)
 
     ### Colorized Frames
-    colorized_images_path = r"C:\video_colorization\diffusion\temp_result"
-    # colorized_images_path = r"C:\video_colorization\vit_colorization\temp_result"
+    # colorized_images_path = r"C:\video_colorization\diffusion\temp_result"
+    colorized_images_path = r"C:\video_colorization\vit_colorization\temp_result"
 
     colorized_dataroot = os.path.join(colorized_images_path, used_dataset, date_str)
     # colorized_dataloader = dataLoader.create_dataLoader(colorized_dataroot, batch_size, shuffle=False)
@@ -109,7 +109,7 @@ for date_str in list_date_str:
         metrics[filename.split(".")[0]]["FID"].append(fid_out)
 
     # Saving the metrics
-    save_path_metrics = os.path.join("metrics",used_dataset,date_str)
+    save_path_metrics = os.path.join("metrics",used_dataset,date_str,"1")
     # f"metrics/{}/{date_str}"
     os.makedirs(save_path_metrics, exist_ok=True)
 

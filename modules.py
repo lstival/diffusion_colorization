@@ -104,7 +104,7 @@ class Up(nn.Module):
         self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
         self.conv = nn.Sequential(
             DoubleConv(in_channels, in_channels, residual=True),
-            # nn.Dropout2d(p=0.1),
+            nn.Dropout2d(p=0.3),
             DoubleConv(in_channels, out_channels, in_channels // 2),
         )
 

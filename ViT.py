@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torchvision.models import vit_b_32
+from torchvision import transforms
 
 #Feature exctration from Vit Pytorch
 # https://discuss.pytorch.org/t/feature-extraction-in-torchvision-models-vit-b-16/148029/3
@@ -16,6 +17,8 @@ class Vit_neck(nn.Module):
         self.encoder = feature_exctration[1]
 
     def forward(self, x) -> torch.Tensor:
+        # Resize image to fit the model
+        x = transforms.Resize((224, 224))(x)
         # Process image in input
         x = self.v._process_input(x)
         # Get the number of samples

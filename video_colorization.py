@@ -31,16 +31,16 @@ args.batch_size = 50
 args.image_size = 224
 args.in_ch=256
 args.out_ch = 256
-args.net_dimension=128
+args.net_dimension=200
 
 # dataset = "mini_kinetics"
-dataset = "mini_DAVIS"
-data_mode = "train"
+dataset = "DAVIS_test"
+data_mode = "test"
 
 batch_size = args.batch_size
 device = "cuda"
-date_str = "UNET_d_20230526_150739"
-best_model = False
+date_str = "Diffusion_20231024_153532"
+best_model = True
 
 # List all classes to be evaluated
 images_paths = f"C:/video_colorization/data/{data_mode}/{dataset}"

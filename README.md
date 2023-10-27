@@ -33,15 +33,15 @@ To train in your data is necessary realize some steps,the first is prepare the d
 ### Data Sctutre
 ```
 └── root
-    └── video.mp4
+    └── video
         ├── 00000.jpg
         ├── 00001.jpg
         └── 00002.jpg
-    └── video1.mp4
+    └── video1
         ├── 00000.jpg
         ├── 00001.jpg
         └── 00002.jpg
-    └── video2.mp4
+    └── video2
         ├── 00000.jpg
         ├── 00001.jpg
         └── 00002.jpg

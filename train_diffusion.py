@@ -1,10 +1,14 @@
+# Logger
+import comet_ml
+
+# Imports
 import torch
 import os
 import copy
 from utils import *
 from ddpm import Diffusion, UNet_conditional
 import read_data as ld
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import logging
 from torch import optim
@@ -13,7 +17,6 @@ from modules import EMA
 from torch.utils.data import DataLoader, SubsetRandomSampler
 import torch.nn as nn
 from ViT import Vit_neck
-
 
 def checkpoint(model, filename):
     torch.save(model.state_dict(), filename)
@@ -140,12 +143,12 @@ class TrainDiffusion():
 
         ## Read pretrained weights
         if pretained_name:
-            # resume(diffusion_model, os.path.join("unet_model", pretained_name, "ckpt.pt"))
-            resume(diffusion_model, os.path.join("unet_model", pretained_name, "best_model.pt"))
+            resume(diffusion_model, os.path.join("unet_model", pretained_name, "ckpt.pt"))
+            # resume(diffusion_model, os.path.join("unet_model", pretained_name, "best_model.pt"))
 
         params_list = diffusion_model.parameters()
-        optimizer = optim.Adam(params_list, lr=lr, weight_decay=1e-3)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=150, gamma=0.1)
+        optimizer = optim.Adam(params_list, lr=lr)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=250, gamma=0.1)
 
         # print(f'Fold {fold + 1}')
 
@@ -157,12 +160,12 @@ class TrainDiffusion():
         # train_pbar = tqdm(train_loader, desc="Training", leave=False)
 
         ## Validation dataloader
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
         # val_pbar = tqdm(val_loader, desc="Validation", leave=False)
 
         criterion = self.load_losses()
 
-        logger = SummaryWriter(os.path.join("runs", self.run_name))
+        # logger = SummaryWriter(os.path.join("runs", self.run_name))
 
         ### Loop over the epochs
         epoch_pbar = tqdm(range(epochs), desc="Epochs", leave=True)
@@ -178,7 +181,8 @@ class TrainDiffusion():
             val_loss, val_l, val_labels = self.valid_epoch(diffusion, diffusion_model, device, val_loader, criterion, epoch)
 
             ### Update the logger
-            logger.add_scalar("Loss", loss.item(), global_step=epoch * l)
+            # logger.add_scalar("Loss", loss.item(), global_step=epoch * l)
+            experiment.log_metric("loss", loss)
 
             epoch_pbar.set_postfix(MSE=loss.item(), MSE_val=val_loss.item(), lr=optimizer.param_groups[0]['lr'],  best_loss=best_loss)
             # epoch_pbar.reset()
@@ -257,7 +261,7 @@ class TrainDiffusion():
                 arquivo.close()
 
         torch.cuda.empty_cache()
-        logger.close()
+        experiment.log_metrics({"loss": loss, "best_loss": best_loss, "best_epoch": best_epoch})
 
 if __name__ == "__main__":
 
@@ -265,25 +269,50 @@ if __name__ == "__main__":
     seed = 42
     torch.manual_seed(seed)
     model_name = get_model_time()
-    run_name = f"UNET_d_{model_name}"
-    noise_steps = 100
+    run_name = f"Diffusion_{model_name}"
+    noise_steps = 200
     time_dim=1000
     device="cuda"
     image_size=224
-    net_dimension=128
+    net_dimension=100
     batch_size=100
     
-    pretained_name = "UNET_d_20230530_011307"
-    # pretained_name = None
-    used_dataset = "DAVIS"
+    # pretained_name = "UNET_d_20230531_091447"
+    pretained_name = None
+    used_dataset = "LDV"
     dataroot = f"C:/video_colorization/diffusion/data/latens/{used_dataset}/"
-    valid_dataroot = f"C:/video_colorization/diffusion/data/latens/mini_DAVIS_val/"
+    valid_dataroot = f"C:/video_colorization/diffusion/data/latens/DAVIS_val/"
     # latent_file_name = "latents_transf.npz"
-    latent_file_name = "latents_transf.npz"
+    latent_file_name = "latents.npz"
     early_stop_thresh = 50
     
-    epochs = 601
-    lr=2e-4
+    epochs = 501
+    lr=2e-5
+
+    comet_logger = comet_ml.Experiment(
+    api_key="OQKd3iAY8RV0sgnY9VNde2D3G",
+    project_name="diffusion_colorization",
+    log_code=True)
+
+    experiment = comet_logger
+
+    comet_logger.log_parameters({
+        "batch_size": batch_size,
+        "img_size": image_size,
+        "used_dataset": used_dataset,
+        "coment_logger": "diffusion trainin in latent space",
+        # "lr": 1e-4,
+        # "weight_decay": 1e-6,
+        "scheduler": "CosineAnnealingLR",
+        # "loss": "SSIMLoss + MSE",
+        "optimizer": "Adam",
+    })
+
+
+    # Log all the code files automatically
+    code_files = python_files()
+    for file in code_files:
+        experiment.log_code(file_name=file)
 
     training = TrainDiffusion(dataroot, valid_dataroot, image_size, time_dim)
     training.train(epochs, lr, pretained_name)

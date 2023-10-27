@@ -274,3 +274,26 @@ def is_notebook():
             return False  # Other type (?)
     except NameError:
         return False      # Probably standard Python interpreter
+    
+def python_files():
+    files_names = []
+
+    path = "."
+    # Lista os arquivos no diretório
+    files = os.listdir(path)
+
+    # Percorre os arquivos
+    for file in files:
+        # Verifica se o arquivo tem final .py
+        if file.endswith(".py"):
+        # Imprime o caminho do arquivo
+            files_names.append(os.path.join(path, file))
+
+    # Busca os arquivos em subpastas
+    for dirpath, dirnames, filenames in os.walk(path):
+        for filename in filenames:
+            if filename.endswith(".py"):
+                # Imprime o caminho do arquivo
+                files_names.append(os.path.join(dirpath, filename))
+
+    return files_names
